@@ -1,0 +1,35 @@
+{
+  "$comment": "Closed enum. A subsystem MUST NOT invent error codes outside this list.",
+  "standardsVersion": "1.1",
+  "codes": [
+    "BAD_REQUEST",
+    "VALIDATION_ERROR",
+    "UNAUTHORIZED",
+    "FORBIDDEN",
+    "NOT_FOUND",
+    "CONFLICT",
+    "TOO_MANY_REQUESTS",
+    "INTERNAL_ERROR",
+    "SERVICE_UNAVAILABLE"
+  ],
+  "httpMapping": {
+    "BAD_REQUEST": 400,
+    "VALIDATION_ERROR": 400,
+    "UNAUTHORIZED": 401,
+    "FORBIDDEN": 403,
+    "NOT_FOUND": 404,
+    "CONFLICT": 409,
+    "TOO_MANY_REQUESTS": 429,
+    "INTERNAL_ERROR": 500,
+    "SERVICE_UNAVAILABLE": 503
+  },
+  "meaning": {
+    "UNAUTHORIZED": "ยังไม่รู้ว่าเป็นใคร - ไม่มี token / token ใช้ไม่ได้",
+    "FORBIDDEN": "รู้ว่าเป็นใครแล้ว แต่สิทธิ์ไม่พอ",
+    "VALIDATION_ERROR": "body/query ไม่ผ่าน validation (ต้องมี error.details เป็น array ของข้อความ)",
+    "CONFLICT": "ชนกฎธุรกิจ เช่น ค่าซ้ำ หรือสถานะไม่อนุญาต",
+    "TOO_MANY_REQUESTS": "ผู้เรียกยิงเกินเพดาน rate limit - ต้องมี header Retry-After เป็นวินาที",
+    "SERVICE_UNAVAILABLE": "สิ่งที่ระบบพึ่งพาไม่พร้อมชั่วคราว เช่น DB pool เต็ม - ต้องมี header Retry-After เป็นวินาที ห้ามใช้แทน 500 ของบั๊ก",
+    "INTERNAL_ERROR": "ข้อผิดพลาดภายใน - ห้ามเปิดเผยรายละเอียดภายในใน response"
+  }
+}

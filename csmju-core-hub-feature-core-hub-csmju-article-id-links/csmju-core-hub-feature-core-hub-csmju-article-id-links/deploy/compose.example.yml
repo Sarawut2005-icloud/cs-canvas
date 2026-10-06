@@ -1,0 +1,146 @@
+# CSMJU2030 Core Hub — production compose (copy to compose.yml next to .env)
+#   code:     $REPO_DIR — a checkout of the `develop` branch
+#   secrets:  ./.env  ./secrets/jwt-*.pem   (chmod 600, never in git)
+#   uploads:  ./uploads   (owned by the deploying account — see DEPLOYMENT.md)
+#   up:       see docs/DEPLOYMENT.md §3 (build one image at a time on a small host)
+#
+# Network shape: nothing listens beyond loopback. `core-web` and `core-api`
+# publish one port each on 127.0.0.1 for the reverse proxy: the web app for
+# the site, and the API for `/api/v1/` — subsystem backends call the API
+# directly for tokens, JWKS and reference data. The database is reachable
+# only on the private compose network.
+#
+# Two stacks on one host (e.g. production and a dev server) need their own
+# directory and .env with a different COMPOSE_PROJECT_NAME and host ports.
+name: ${COMPOSE_PROJECT_NAME:-csmju-core-hub}
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  core-db:
+    <<: *hardening
+    image: postgres:16-alpine
+    # The postgres entrypoint drops to the postgres user itself; these are
+    # the capabilities it needs to get there and to own its data directory.
+    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    volumes:
+      - core-hub-db-data:/var/lib/postgresql/data
+    mem_limit: 256m
+    shm_size: 128m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [core]
+
+  core-api:
+    <<: *hardening
+    build:
+      context: ${REPO_DIR:?set REPO_DIR in .env to the repository checkout}
+      dockerfile: deploy/backend.Dockerfile
+    image: ${COMPOSE_PROJECT_NAME:-csmju-core-hub}/api:latest
+    depends_on:
+      core-db:
+        condition: service_healthy
+    # Same uid as the deploying account, so the 0600 private key and the
+    # uploads directory are usable inside the container without loosening
+    # their permissions on the host.
+    user: "${DEPLOY_UID:?set DEPLOY_UID in .env (id -u)}:${DEPLOY_UID}"
+    read_only: true
+    tmpfs: ["/tmp:size=32m"]
+    environment:
+      # production unless the fallback in DEPLOYMENT.md says otherwise — the
+      # pre-launch localhost callbacks use ALLOW_LOCALHOST_CALLBACKS, not this.
+      NODE_ENV: ${API_NODE_ENV:-production}
+      APP_NAME: core-api
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@core-db:5432/${POSTGRES_DB}?schema=public
+      JWT_PRIVATE_KEY_PATH: keys/jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: keys/jwt-public.pem
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      # Requests reach the API through the reverse proxy and the web
+      # container, both on private addresses. Without this every caller
+      # looks like the proxy and the whole university shares one rate-limit
+      # bucket. The API never reads X-Forwarded-For by hand.
+      TRUST_PROXY: ${TRUST_PROXY:-loopback, uniquelocal}
+      # Pre-launch only: accept http://localhost subsystem callbacks.
+      ALLOW_LOCALHOST_CALLBACKS: ${ALLOW_LOCALHOST_CALLBACKS:-false}
+      # standardsVersion choices: csmju2030-standards tags (deploy/.env.example).
+      STANDARDS_TAGS_URL: ${STANDARDS_TAGS_URL:-}
+      STANDARDS_VERSIONS_FALLBACK: ${STANDARDS_VERSIONS_FALLBACK:-}
+      STANDARDS_TAGS_TOKEN: ${STANDARDS_TAGS_TOKEN:-}
+      # Central image store (backend/README.md §2.4): absolute image URLs are
+      # built from PUBLIC_URL; files live in the mounted uploads directory.
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env, e.g. https://<domain>}
+      UPLOAD_DIR: /app/backend/uploads
+      # Roles and permissions on every start. No test accounts in production:
+      # only a database without any admin gets the bootstrap admin, which then
+      # needs SEED_ADMIN_PASSWORD.
+      SEED_ON_START: "true"
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      # CORS stays off: browsers never talk to the API directly.
+      # CORS_ORIGINS: https://<domain>
+      # MJU SSO — the API exchanges the authorization code with token.aspx.
+      MJU_CLIENT_ID: ${MJU_CLIENT_ID:-}
+      MJU_SUBJECT_SECRET: ${MJU_SUBJECT_SECRET:-}
+    volumes:
+      # Signing keys live outside the image, read-only.
+      - ./secrets/jwt-private.pem:/app/backend/keys/jwt-private.pem:ro
+      - ./secrets/jwt-public.pem:/app/backend/keys/jwt-public.pem:ro
+      # Uploaded images survive rebuilds; back up with the database.
+      - ./uploads:/app/backend/uploads
+    ports:
+      # Loopback only. The reverse proxy sends /api/v1/ here.
+      - "127.0.0.1:${API_HOST_PORT:-3010}:3000"
+    mem_limit: 512m
+    networks: [core]
+
+  core-web:
+    <<: *hardening
+    build:
+      context: ${REPO_DIR:?set REPO_DIR in .env to the repository checkout}
+      dockerfile: deploy/frontend.Dockerfile
+    image: ${COMPOSE_PROJECT_NAME:-csmju-core-hub}/web:latest
+    depends_on:
+      core-api:
+        condition: service_healthy
+    user: "${DEPLOY_UID:?set DEPLOY_UID in .env (id -u)}:${DEPLOY_UID}"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+      # next/image optimiser cache (csmju.com thumbnails)
+      - /app/frontend/.next/cache:size=64m
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3100
+      # Server-side only — the browser never learns this address.
+      BACKEND_API_URL: http://core-api:3000/api/v1
+      CSMJU_SITE_URL: https://csmju.com
+      # MJU SSO — builds the signin/signout links; empty hides the button.
+      MJU_CLIENT_ID: ${MJU_CLIENT_ID:-}
+    ports:
+      # Loopback only. The reverse proxy sends everything else here.
+      - "127.0.0.1:${WEB_HOST_PORT:-3000}:3100"
+    mem_limit: 512m
+    networks: [core]
+
+networks:
+  core:
+    driver: bridge
+
+volumes:
+  core-hub-db-data:

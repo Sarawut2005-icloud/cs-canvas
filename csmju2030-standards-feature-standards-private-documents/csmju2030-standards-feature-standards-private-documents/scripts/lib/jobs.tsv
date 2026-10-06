@@ -1,0 +1,24 @@
+# scripts/lib/jobs.tsv — checks of each job in .github/workflows/subsystem-compliance.yml
+# read by scripts/run-job.sh · columns are TAB-separated: job  label  script  extra-args
+# the target dir is always the first argument · {base_sha} {head_ref} {tools} are filled in by run-job.sh
+# a new check goes here, not in the workflow: subsystems pick it up when they move .standards-version
+convention	Branch naming (GH-01)	check-branch-name.sh	{head_ref}
+convention	Commit messages (GH-02)	check-commit-messages.sh	{base_sha}
+convention	Guard CI files (GH-03)	check-ci-untouched.sh	{base_sha}
+version	Standards version + submodule (GH-04)	check-submodule-pointer.sh	{tools}
+security	Secret scan	check-no-secrets.sh
+security	No token in localStorage	check-no-local-storage.sh
+security	No self-rolled JWT verify / login	check-no-jwt-verify.sh
+security	DB isolation	check-db-isolation.sh
+security	Authorized dependencies	check-authorized-deps.sh
+security	NestJS backend (ARC-04)	check-backend-nestjs.sh
+security	Deploy readiness (DEP-01..04)	check-deploy-ready.sh
+api	openapi.json sync	check-openapi-sync.sh
+api	API conventions	check-api-conventions.sh
+data-dictionary	Forbidden field aliases	check-field-aliases.sh
+data-dictionary	snake_case fields	check-snake-case.sh
+data-dictionary	No hardcoded faculty list	check-no-hardcoded-faculty.sh
+data-dictionary	Money fields are integers	check-money-fields.sh
+ui	Design token usage	check-ui-tokens.sh
+quality	QA checks (lint/typecheck/test/build/pnpm-only)	check-qa.sh
+exceptions	Validate .compliance-exceptions.yml	check-exceptions.sh

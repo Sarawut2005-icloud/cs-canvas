@@ -1,0 +1,10 @@
+version: 1
+
+exceptions:
+  - check: ARC-02
+    scope: "backend/package.json"
+    dependency: "node-cron"
+    reason: "ต้องใช้ scheduled job สำหรับแจ้งเตือนของค้างคืน รอ PM เพิ่มเข้า whitelist"
+    approved_by: ["@pm3"]
+    issue: "csmju2030-standards#155"
+    expires: "2020-01-01"

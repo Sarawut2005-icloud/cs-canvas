@@ -1,0 +1,5 @@
+{
+  "name": "backend",
+  "dependencies": { "@nestjs/core": "^10.4.0", "reflect-metadata": "^0.2.0" },
+  "devDependencies": { "@nestjs/cli": "^10.4.0", "vitest": "^2.0.0", "@types/node": "^20.14.0" }
+}

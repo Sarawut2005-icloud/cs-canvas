@@ -1,0 +1,146 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://csmju2030.ac.th/schemas/subsystem.schema.json",
+  "title": "Subsystem",
+  "description": "subsystem.yaml ที่รากของ repo ระบบย่อย — CI และ conformance อ่านไฟล์นี้ไฟล์เดียว · ห้ามมีบัญชีหรือรหัสผ่าน (docs/conformance.md ข้อ 2.1)",
+  "type": "object",
+  "required": [
+    "name",
+    "base_url"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "ชื่อระบบ เช่น csmju-equipment — ต้องตรงกับชื่อในทะเบียน Core Hub, SUBSYSTEM_ID ของ backend และ frontend และ data.service ของ /api/health (subsystem-registry.md ข้อ 2) · conformance ตรวจรูปแบบนี้ก่อนเริ่ม"
+    },
+    "standards_version": {
+      "type": "string",
+      "deprecated": true,
+      "description": "ไม่ใช้แล้วตั้งแต่ 1.5.1 — CI อ่านเวอร์ชันจาก .standards-version (docs/standards-versioning.md)"
+    },
+    "public_endpoints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "endpoint ที่เรียกได้โดยไม่มี token · SSO 1.1: GET /api/health · GET /auth/login · GET /auth/callback · POST /auth/logout"
+    },
+    "conformance_level": {
+      "enum": [
+        "L1",
+        "L2",
+        "L3"
+      ],
+      "default": "L3",
+      "description": "ระดับ conformance ที่ระบบย่อยต้องผ่าน"
+    },
+    "base_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "origin ที่เบราว์เซอร์เปิด คือ frontend ที่ proxy /api/* และ /auth/* ไป backend เช่น http://localhost:3201 (ไม่ใช่ 127.0.0.1) · conformance ต้องใช้ · base_url + callback_path ต้องตรงกับ Callback URL ในทะเบียน"
+    },
+    "core_hub_url": {
+      "type": "string",
+      "format": "uri",
+      "default": "http://localhost:3000",
+      "description": "origin ของ Core Hub ไม่มี /api/v1 · server จริง https://csmju2030.jowave.com · ถ้าไม่ใช่ localhost / 127.0.0.1 / [::1] conformance ต้องมี CONFORMANCE_ACCOUNTS_FILE"
+    },
+    "core_hub_web_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "เว็บของ Core Hub ที่ GET /auth/login ส่งเบราว์เซอร์ไป (standards 1.1) · server จริง https://csmju2030.jowave.com · บังคับเมื่อ conformance_level เป็น L3 (L3-16 และ L3-22 เทียบกับค่านี้)"
+    },
+    "callback_path": {
+      "type": "string",
+      "default": "/auth/callback",
+      "description": "ต้องตรงกับ callback_url ในทะเบียนของ Core Hub"
+    },
+    "probes": {
+      "type": "object",
+      "description": "endpoint ที่ conformance ใช้ตรวจสัญญา API (ระดับ L2 ขึ้นไป)",
+      "properties": {
+        "collection": {
+          "type": "string"
+        },
+        "not_found": {
+          "type": "string"
+        },
+        "invalid_id": {
+          "type": "string"
+        },
+        "create": {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "allowed_role": {
+              "enum": [
+                "student",
+                "alumni",
+                "staff",
+                "lecturer",
+                "guest",
+                "admin"
+              ],
+              "default": "staff"
+            },
+            "denied_role": {
+              "enum": [
+                "student",
+                "alumni",
+                "staff",
+                "lecturer",
+                "guest",
+                "admin"
+              ],
+              "default": "student",
+              "description": "role ที่ต้องเขียนไม่ได้ (403) และต้องมีบัญชีในไฟล์บัญชี · กับ Core Hub จริงใช้ guest หรือ alumni เพราะ student มีแต่ MJU SSO ไม่มีรหัสผ่าน"
+            },
+            "invalid_body": {
+              "type": "object"
+            },
+            "valid_body": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "owners": {
+      "type": "object",
+      "properties": {
+        "pl": {
+          "type": "string"
+        },
+        "aie": {
+          "type": "string"
+        }
+      }
+    },
+    "test_accounts": {
+      "not": {},
+      "description": "ห้ามมี — ตั้งแต่ standards 1.7.0 conformance อ่านบัญชีจากไฟล์นอก repo ที่ CONFORMANCE_ACCOUNTS_FILE ชี้เท่านั้น และตกทันทีถ้าพบคีย์นี้ (รหัสผ่านต้องไม่อยู่ใน repo)"
+    }
+  },
+  "if": {
+    "$comment": "ไม่ระบุ conformance_level = L3 (ค่าเริ่มต้น) — if ผ่านเมื่อไม่มีคีย์นี้ จึงบังคับ core_hub_web_url ด้วย",
+    "properties": {
+      "conformance_level": {
+        "const": "L3"
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "core_hub_web_url"
+    ]
+  },
+  "additionalProperties": true
+}

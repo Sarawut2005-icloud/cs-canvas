@@ -1,0 +1,5 @@
+{
+  "name": "backend",
+  "private": true,
+  "scripts": { "test": "jest", "build": "nest build" }
+}

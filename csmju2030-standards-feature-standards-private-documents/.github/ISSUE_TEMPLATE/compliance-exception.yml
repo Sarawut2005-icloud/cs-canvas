@@ -1,0 +1,149 @@
+# ci-compliance-spec.md ข้อ 11 — ฟอร์มขอข้อยกเว้นมาตรฐานของระบบย่อย
+name: ขอข้อยกเว้นมาตรฐาน (compliance-exception)
+description: ระบบย่อยทำตามกฎข้อหนึ่งไม่ได้จริง และขอยกเว้นเฉพาะขอบเขตที่ระบุ (ci-compliance-spec ข้อ 11)
+title: "[exception] <ชื่อระบบ>: <รหัสกฎ> — <เรื่องสั้น ๆ>"
+labels: ["compliance-exception"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ใช้ฟอร์มนี้เมื่อระบบย่อยทำตามกฎข้อใดข้อหนึ่งไม่ได้จริง — อ่านกระบวนการเต็มที่
+        [`ci-compliance-spec.md` ข้อ 11](https://github.com/CSMJU2030/csmju2030-standards/blob/main/ci-compliance-spec.md#11-exception-process)
+
+        **ลำดับการพิจารณา**
+        1. PL อ่านแล้ว comment รับรอง หรือขอข้อมูลเพิ่ม
+        2. PM กับ DevOps ตัดสิน — ไม่อนุมัติ: แก้โค้ดให้ตรงมาตรฐาน · อนุมัติ: DevOps เพิ่มรายการลง
+           `.compliance-exceptions.yml` ของ repo ระบบย่อยให้ (ไฟล์นี้อยู่ใต้ CODEOWNERS ของ DevOps ทีมแก้เองไม่ได้)
+        3. ทุกข้อยกเว้นมีวันหมดอายุ ครบแล้ว CI ตกอีกครั้ง — ขอต่อได้ด้วย issue ใหม่ที่อ้าง issue นี้
+
+        **ตัวตรวจที่อ่าน `.compliance-exceptions.yml` มี 2 ข้อ**
+        - `UI-01` — ยกเว้นไฟล์เดียว หรือโฟลเดอร์ที่ลงท้ายด้วย `/` · ใช้กับภาพที่วาดด้วยโค้ด เช่น ส่วนของเกม — เมนู ฟอร์ม ตาราง ยังต้องใช้ token กลาง
+        - `ARC-02` — ยกเว้น dependency เดียวใน `package.json` ที่ระบุ · ไม่ยกเว้น `ARC-03` (dependency ต้องห้าม)
+
+        กฎข้ออื่น รวมถึงกฎในเอกสารที่ไม่มีตัวตรวจ CI ยื่นด้วยฟอร์มนี้ได้เช่นกัน
+        แต่ไฟล์ยกเว้นไม่มีผลกับตัวตรวจข้ออื่น — ถ้าอนุมัติ PM จะระบุใน issue นี้ว่าต้องทำอะไรต่อ
+
+        > ⚠️ **repo นี้เป็น public** — ห้ามใส่ token · รหัสผ่าน · ค่าใน `.env` · ข้อมูลจริงของนักศึกษาหรือบุคลากร
+        > ภาพหน้าจอใส่ได้เมื่อไม่มีข้อมูลบุคคล
+
+  - type: input
+    id: subsystem
+    attributes:
+      label: ระบบย่อย (repo)
+      placeholder: CSMJU2030/csmju-<ชื่อระบบ>
+    validations:
+      required: true
+
+  - type: input
+    id: standards-version
+    attributes:
+      label: เวอร์ชันมาตรฐานที่ใช้ (`.standards-version`)
+      placeholder: 1.7.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: rule-kind
+    attributes:
+      label: ประเภทกฎ
+      options:
+        - UI-01 — สี hex ดิบ (ยกเว้นรายไฟล์ได้)
+        - ARC-02 — dependency นอก whitelist (ยกเว้นราย package.json ได้)
+        - check อื่นของ CI
+        - กฎในเอกสารที่ไม่มีตัวตรวจ CI
+    validations:
+      required: true
+
+  - type: input
+    id: rule
+    attributes:
+      label: รหัสกฎ หรือเอกสารและข้อ
+      description: เช่น `UI-01` · `SEC-05` · `api-conventions.md` ข้อ 2 (Public endpoints)
+    validations:
+      required: true
+
+  - type: input
+    id: scope
+    attributes:
+      label: ขอบเขต (`scope`)
+      description: >-
+        ไฟล์เดียว หรือโฟลเดอร์ที่ลงท้ายด้วย `/` — ห้ามใช้ `*` ·
+        กฎที่ไม่ผูกกับไฟล์ ให้ระบุ endpoint หรือหน้าจอที่เกี่ยวข้องแทน
+      placeholder: frontend/src/app/play/answer-colors.module.css
+    validations:
+      required: true
+
+  - type: input
+    id: dependency
+    attributes:
+      label: ชื่อ dependency (เฉพาะ ARC-02)
+      placeholder: node-cron
+    validations:
+      required: false
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: เหตุผล
+      description: ทำไมทำตามกฎนี้ไม่ได้ — ปัญหาจริงที่ผู้ใช้หรือระบบเจอ
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: ทางเลือกที่ลองแล้ว
+      description: ลองทำตามมาตรฐานแบบไหนแล้ว และทำไมยังไม่พอ
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: ผลกระทบ
+      description: ต่อผู้ใช้ · ความปลอดภัย · ข้อมูลบุคคล · ระบบอื่น — และบอกด้วยว่าส่วนไหนยังทำตามมาตรฐานครบ
+    validations:
+      required: true
+
+  - type: input
+    id: expires
+    attributes:
+      label: ขอใช้ถึงวันที่ (`expires`)
+      description: รูปแบบ YYYY-MM-DD · ไม่มีข้อยกเว้นถาวร ครบแล้วขอต่อได้
+      placeholder: "2027-03-31"
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: หลักฐานประกอบ
+      description: ภาพหน้าจอ · ผลวัด contrast · ลิงก์ PR หรือ branch (ไม่มีข้อมูลบุคคล)
+    validations:
+      required: false
+
+  - type: textarea
+    id: entry
+    attributes:
+      label: ร่างรายการใน `.compliance-exceptions.yml` (เฉพาะ UI-01 / ARC-02)
+      description: DevOps ตรวจและเติม `approved_by` ตอนอนุมัติ · ARC-02 ต้องมี `dependency` ด้วย
+      render: yaml
+      value: |
+        - check: UI-01
+          scope: "frontend/src/app/play/answer-colors.module.css"
+          reason: "..."
+          approved_by: []
+          issue: "csmju2030-standards#<เลข issue นี้>"
+          expires: "2027-03-31"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: ยืนยัน
+      options:
+        - label: ส่วนอื่นของระบบยังทำตามมาตรฐานครบ — ขอยกเว้นเฉพาะขอบเขตข้างบน
+          required: true
+        - label: ใน issue นี้ไม่มี token · รหัสผ่าน · ค่าใน `.env` หรือข้อมูลจริงของบุคคล
+          required: true

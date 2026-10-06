@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://csmju2030.ac.th/schemas/common.schema.json",
+  "title": "ResponseEnvelope",
+  "description": "ซองคำตอบของทุก API (docs/api-conventions.md ข้อ 3-5) · ผู้เรียกต้องข้าม key ที่ไม่รู้จัก — Core Hub เพิ่ม requestId · timestamp · path · error.statusCode · meta บังคับเฉพาะคำตอบแบบรายการ (#/definitions/listEnvelope)",
+  "oneOf": [
+    { "$ref": "#/definitions/successEnvelope" },
+    { "$ref": "#/definitions/errorEnvelope" }
+  ],
+  "definitions": {
+    "errorCode": {
+      "description": "รายการปิด 9 ค่า — ต้องตรงกับ contracts/error-codes.json",
+      "type": "string",
+      "enum": [
+        "BAD_REQUEST",
+        "VALIDATION_ERROR",
+        "UNAUTHORIZED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "CONFLICT",
+        "TOO_MANY_REQUESTS",
+        "INTERNAL_ERROR",
+        "SERVICE_UNAVAILABLE"
+      ]
+    },
+    "pageMeta": {
+      "type": "object",
+      "required": ["total", "page", "limit", "totalPages"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "page": { "type": "integer", "minimum": 1 },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "totalPages": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "successEnvelope": {
+      "description": "คำตอบที่สำเร็จ — data อาจเป็น object · array · null (เช่น /people/me ที่ยังไม่ผูกบัญชี) · meta มีเฉพาะรายการแบบแบ่งหน้า",
+      "type": "object",
+      "required": ["success", "data"],
+      "properties": {
+        "success": { "const": true },
+        "data": {},
+        "meta": { "$ref": "#/definitions/pageMeta" }
+      }
+    },
+    "listEnvelope": {
+      "description": "คำตอบแบบรายการแบ่งหน้า — data เป็น array และต้องมี meta",
+      "allOf": [
+        { "$ref": "#/definitions/successEnvelope" },
+        {
+          "required": ["meta"],
+          "properties": { "data": { "type": "array" } }
+        }
+      ]
+    },
+    "errorEnvelope": {
+      "type": "object",
+      "required": ["success", "error"],
+      "properties": {
+        "success": { "const": false },
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "$ref": "#/definitions/errorCode" },
+            "message": { "type": "string" },
+            "details": { "type": "array", "items": { "type": "string" } }
+          },
+          "if": {
+            "required": ["code"],
+            "properties": { "code": { "const": "VALIDATION_ERROR" } }
+          },
+          "then": { "required": ["details"] }
+        }
+      }
+    }
+  }
+}

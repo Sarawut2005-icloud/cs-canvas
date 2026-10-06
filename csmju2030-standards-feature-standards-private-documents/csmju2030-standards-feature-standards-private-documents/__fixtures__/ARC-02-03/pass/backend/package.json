@@ -1,0 +1,14 @@
+{
+  "name": "backend",
+  "dependencies": {
+    "@nestjs/core": "10.0.0",
+    "@nestjs/common": "10.0.0",
+    "prisma": "5.0.0",
+    "@prisma/client": "5.0.0",
+    "@nestjs/schedule": "5.0.0"
+  },
+  "devDependencies": {
+    "typescript": "5.5.0",
+    "jest": "29.0.0"
+  }
+}

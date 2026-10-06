@@ -1,0 +1,21 @@
+{
+  "name": "csmju2030-branch-naming",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": {
+    "repository_name": { "include": ["csmju-*"], "exclude": [] },
+    "ref_name": { "include": ["refs/heads/**"], "exclude": ["refs/heads/main", "refs/heads/develop"] }
+  },
+  "rules": [
+    {
+      "type": "branch_name_pattern",
+      "parameters": {
+        "operator": "regex",
+        "pattern": "^feature/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$",
+        "negate": false,
+        "name": "feature/<subsystem>/<slug>"
+      }
+    }
+  ]
+}

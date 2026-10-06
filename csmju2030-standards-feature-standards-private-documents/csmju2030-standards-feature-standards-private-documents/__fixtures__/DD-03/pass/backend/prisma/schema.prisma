@@ -1,0 +1,23 @@
+// ฐานข้อมูลเป็น snake_case ผ่าน @map/@@map ส่วน field ใน Prisma เป็น camelCase
+model BorrowRecord {
+  id          String   @id @default(uuid())
+  coreUserId  String   @map("core_user_id")
+  itemCode    String   @map("item_code")
+  quantity    Int
+  borrowedAt  DateTime @default(now()) @map("borrowed_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  item        Item     @relation(fields: [itemId], references: [id])
+  itemId      String   @map("item_id")
+
+  @@map("borrow_records")
+}
+
+model Item {
+  id      String         @id @default(uuid())
+  name    String
+  records BorrowRecord[]
+
+  @@map("items")
+}

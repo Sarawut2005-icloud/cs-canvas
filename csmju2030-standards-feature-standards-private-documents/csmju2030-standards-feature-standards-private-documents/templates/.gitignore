@@ -1,0 +1,22 @@
+# Secrets — ห้าม commit เด็ดขาด
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+*.pem
+*.key
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+.next/
+dist/
+build/
+coverage/
+generated/          # Prisma 7 client (สร้างใหม่ด้วย prisma generate)
+
+# ยกเว้นไฟล์ template
+!.env.example

@@ -1,0 +1,129 @@
+name: CSMJU2030 Subsystem Images (Reusable)
+
+# Called from every csmju-<subsystem> repo's .github/workflows/images.yml
+# (templates/images.yml) on each push to main. Builds the two images of
+# docs/deployment.md 3 from the repo's own Dockerfiles and pushes them to
+# GitHub Container Registry, where the server pulls them:
+#
+#   ghcr.io/<org>/<repo>-api   ← backend/Dockerfile
+#   ghcr.io/<org>/<repo>-web   ← frontend/Dockerfile
+#
+# Tags: the branch name (main) that the server follows, and sha-<7 chars> of
+# the commit for rolling back (deployment.md 5). The buildcache tag holds the
+# layer cache of the next build.
+#
+# Builds only once the repo is on standards MIN_STANDARDS or later, so its
+# Dockerfiles have passed DEP-01..04. Repos still on an older version had
+# Dockerfiles before the contract existed (other ports, root user, no
+# standalone); building them would only fail or publish images the server
+# cannot run. Those repos — and parts without a Dockerfile — are skipped
+# with a notice, and only the small plan job runs.
+#
+# Plain docker CLI on purpose: the org allows only GitHub-owned actions plus a
+# short list (org-settings/org-settings-checklist.md), and docker/buildx is
+# already on the runner. The caller grants packages: write — a called workflow
+# cannot raise the permissions of GITHUB_TOKEN. The label
+# org.opencontainers.image.source links each package to its repo, so the
+# package is as private as the repo.
+
+on:
+  workflow_call:
+
+env:
+  MIN_STANDARDS: '1.8.0'
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      parts: ${{ steps.plan.outputs.parts }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            .standards-version
+            backend/Dockerfile
+            frontend/Dockerfile
+          sparse-checkout-cone-mode: false
+
+      - name: Which images to build
+        id: plan
+        run: |
+          version=""
+          if [[ -f .standards-version ]]; then
+            version="$(tr -d '[:space:]' < .standards-version)"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+             || [[ "$(printf '%s\n%s\n' "$MIN_STANDARDS" "$version" | sort -V | head -1)" != "$MIN_STANDARDS" ]]; then
+            echo "::notice::standards ${version:-?} ต่ำกว่า $MIN_STANDARDS — ยังไม่ build image · เลื่อน .standards-version และ submodule เป็น $MIN_STANDARDS ขึ้นไปให้ผ่าน DEP-01..04 ก่อน (deployment.md ข้อ 3)"
+            echo "parts=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          parts=""
+          for entry in api:backend/Dockerfile web:frontend/Dockerfile; do
+            part="${entry%%:*}"
+            file="${entry#*:}"
+            if [[ -f "$file" ]]; then
+              parts="${parts:+$parts,}{\"part\":\"$part\",\"dockerfile\":\"$file\"}"
+            else
+              echo "::notice::ไม่มี $file — ข้าม image $part (deployment.md ข้อ 3)"
+            fi
+          done
+          echo "parts=[$parts]" >> "$GITHUB_OUTPUT"
+
+  image:
+    name: Image (${{ matrix.part }})
+    needs: plan
+    if: needs.plan.outputs.parts != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.parts) }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build and push
+        env:
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          PART: ${{ matrix.part }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # GHCR names must be lowercase
+          image="ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')-$PART"
+          branch_tag="$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'a-zA-Z0-9_.-' '-' | cut -c1-120)"
+          sha_tag="sha-$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+
+          # the docker-container driver can export the layer cache; the default driver cannot
+          docker buildx create --use --name csmju-images >/dev/null
+          # build context = repo root: pnpm keeps the lockfile there, and the
+          # root .dockerignore keeps .env and node_modules out (DEP-03)
+          docker buildx build . \
+            --file "$DOCKERFILE" \
+            --tag "$image:$branch_tag" \
+            --tag "$image:$sha_tag" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --cache-from "type=registry,ref=$image:buildcache" \
+            --cache-to "type=registry,ref=$image:buildcache,mode=max,image-manifest=true,oci-mediatypes=true" \
+            --push
+
+          docker logout ghcr.io
+          {
+            echo "### $PART"
+            echo '```'
+            echo "$image:$branch_tag"
+            echo "$image:$sha_tag"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

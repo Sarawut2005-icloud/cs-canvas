@@ -1,0 +1,11 @@
+{
+  "name": "image-backend",
+  "dependencies": {
+    "@nestjs/core": "11.0.0",
+    "@nestjs/common": "11.0.0",
+    "sharp": "0.35.4"
+  },
+  "devDependencies": {
+    "typescript": "5.9.0"
+  }
+}

@@ -1,0 +1,19 @@
+# Keep the build context small and free of local state / secrets.
+**/node_modules
+**/dist
+**/.next
+**/generated
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+**/keys
+**/*.pem
+.git
+docs
+deploy/*.md
+# master-data.sql holds real student and staff records. The seed does not read
+# it; the deploy admin loads it into the database from the server's checkout
+# with psql (docs/DEPLOYMENT.md). Keep it out of every image, and never push
+# an image of this repository to a public registry.
+backend/prisma/data/

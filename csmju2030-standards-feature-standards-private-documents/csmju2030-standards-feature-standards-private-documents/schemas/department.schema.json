@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://csmju2030.ac.th/schemas/department.schema.json",
+  "title": "Department",
+  "description": "สาขาวิชาหนึ่งแถวจาก GET /api/v1/departments และ /departments/:code ของ Core Hub (docs/reference-data.md ข้อ 4.2) · ไม่มี id · ระบบย่อยเก็บแค่ code",
+  "type": "object",
+  "required": ["code", "nameTh", "nameEn", "facultyCode", "faculty", "isActive", "updatedAt"],
+  "properties": {
+    "code": { "type": "string", "pattern": "^[A-Z0-9-]{1,50}$", "examples": ["CS"] },
+    "nameTh": { "type": "string" },
+    "nameEn": { "type": "string" },
+    "facultyCode": {
+      "description": "code ของคณะ — ใช้ตัวนี้อ้างอิง",
+      "type": "string",
+      "pattern": "^[A-Z0-9-]{1,50}$",
+      "examples": ["SCI"]
+    },
+    "faculty": {
+      "description": "สำหรับแสดงผล",
+      "type": "object",
+      "required": ["code", "nameTh"],
+      "properties": {
+        "code": { "type": "string" },
+        "nameTh": { "type": "string" }
+      }
+    },
+    "isActive": { "type": "boolean" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": true
+}

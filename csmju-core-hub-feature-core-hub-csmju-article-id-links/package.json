@@ -1,0 +1,21 @@
+{
+  "name": "csmju-core-hub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CSMJU2030 Core Hub - central identity provider, subsystem registry, JWKS \u0e41\u0e25\u0e30 Central SSO",
+  "scripts": {
+    "dev": "pnpm --parallel --filter core-api --filter frontend start:dev",
+    "build": "pnpm --filter core-api build && pnpm --filter frontend build",
+    "start:dev": "pnpm --filter core-api start:dev",
+    "start:dev:frontend": "pnpm --filter frontend dev",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm --filter core-api typecheck",
+    "test": "pnpm --filter core-api test",
+    "test:e2e": "pnpm --filter core-api test:e2e",
+    "checks": "bash ../csmju2030-standards/scripts/run-core-hub-checks.sh ."
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@12.3.4"
+}

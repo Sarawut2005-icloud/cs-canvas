@@ -1,0 +1,5 @@
+{
+  "name": "frontend",
+  "dependencies": { "next": "^14.2.0", "typescript-eslint": "^8.0.0" },
+  "devDependencies": { "@mui/material": "^5.15.0" }
+}

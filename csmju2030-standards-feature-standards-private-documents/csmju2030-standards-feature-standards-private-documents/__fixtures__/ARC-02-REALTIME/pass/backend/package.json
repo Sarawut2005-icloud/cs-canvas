@@ -1,0 +1,15 @@
+{
+  "name": "backend",
+  "dependencies": {
+    "@nestjs/core": "11.0.1",
+    "@nestjs/common": "11.0.1",
+    "@nestjs/platform-express": "11.0.1",
+    "@nestjs/websockets": "11.0.1",
+    "@nestjs/platform-socket.io": "11.0.1",
+    "socket.io": "4.8.3"
+  },
+  "devDependencies": {
+    "typescript": "5.9.0",
+    "jest": "30.0.0"
+  }
+}

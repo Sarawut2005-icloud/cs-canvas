@@ -1,0 +1,16 @@
+version: 1
+
+exceptions:
+  - check: UI-01
+    scope: "frontend/src/game/BattleScene.tsx"
+    reason: "ฉากต่อสู้เป็นภาพวาดของเกม ใช้ชุดสีกลางไม่ได้"
+    approved_by: ["@pm"]
+    issue: "csmju2030-standards#200"
+    expires: "2099-12-31"
+
+  - check: UI-01
+    scope: "frontend/src/game/art/"
+    reason: "ภาพแผนที่โลกและบล็อกโค้ดของเกม"
+    approved_by: ["@pm"]
+    issue: "csmju2030-standards#200"
+    expires: "2099-12-31"

@@ -1,0 +1,7 @@
+// ผิด: field camelCase ไม่มี @map และ model ไม่มี @@map
+model BorrowRecord {
+  id         String   @id @default(uuid())
+  coreUserId String
+  itemCode   String
+  createdAt  DateTime @default(now())
+}

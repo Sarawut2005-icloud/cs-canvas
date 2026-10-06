@@ -1,0 +1,10 @@
+{
+  "name": "frontend",
+  "dependencies": {
+    "next": "15.5.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "leaflet": "1.9.4",
+    "react-leaflet": "5.0.0"
+  }
+}

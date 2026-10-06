@@ -1,0 +1,28 @@
+# REFERENCE ONLY — see the header of ruleset-main-protection.yml. The
+# importable payloads are ruleset-branch-naming.{org,repo}.json.
+#
+# WARNING: this ruleset forces every other branch to match
+# feature/<subsystem>/<slug>. It excludes only the two long-lived branches,
+# refs/heads/main and refs/heads/develop (github-workflow.md 1.5), so a repo
+# whose default branch is still `master` would have its own default branch
+# rejected. Rename such repos to `main` before applying — as of
+# 2026-09-04 CSMJU2030/csmju-equipment still defaults to `master`.
+
+name: csmju2030-branch-naming
+enforcement: active
+target: branch
+
+conditions:
+  repository_name:              # org-level only; omit in the repo-level form
+    include: ["csmju-*"]
+  ref_name:
+    include: ["refs/heads/**"]
+    exclude: ["refs/heads/main", "refs/heads/develop"]
+
+rules:
+  - type: branch_name_pattern
+    parameters:
+      operator: regex
+      pattern: "^feature/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$"
+      negate: false
+      name: "feature/<subsystem>/<slug>"

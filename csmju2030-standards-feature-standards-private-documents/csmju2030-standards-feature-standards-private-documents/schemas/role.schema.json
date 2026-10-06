@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://csmju2030.ac.th/schemas/role.schema.json",
+  "title": "CoreRole",
+  "description": "core role (Layer 1) — ค่าของ claim role ใน access token และ role ใน GET /api/v1/auth/me (docs/authorization.md ข้อ 2 · contracts/vocabulary.json coreRoles)",
+  "type": "string",
+  "enum": ["student", "alumni", "staff", "lecturer", "guest", "admin"],
+  "definitions": {
+    "roleMapping": {
+      "description": "defaultRoleMapping ในทะเบียน: key = core role ที่เข้าระบบได้ (role ที่ไม่อยู่ใน key โดน 403 ที่ Core Hub) · value = subsystem role (ระบบย่อยแปลงในโค้ดของตัวเอง) · ใส่อย่างน้อยหนึ่ง role เสมอ",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "enum": ["student", "alumni", "staff", "lecturer", "guest", "admin"] },
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+.next/
+coverage/
+.DS_Store
+*.log
+
+docs/DEV_SERVER_HANDOFF.md

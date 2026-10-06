@@ -1,0 +1,5 @@
+model Fine {
+  id          String @id
+  fine_amount Float
+  late_fee    Decimal
+}

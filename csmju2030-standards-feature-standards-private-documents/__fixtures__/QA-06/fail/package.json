@@ -1,0 +1,7 @@
+{
+  "name": "csmju-example",
+  "private": true,
+  "scripts": {
+    "test": "pnpm --filter backend test"
+  }
+}

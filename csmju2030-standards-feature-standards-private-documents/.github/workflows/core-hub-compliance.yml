@@ -1,0 +1,154 @@
+name: CSMJU2030 Core Hub Compliance (Reusable)
+
+# เรียกจาก csmju-core-hub/.github/workflows/ci.yml โดย pin ด้วย tag
+#
+# ต่างจาก subsystem-compliance.yml ตรงที่:
+#   1. ตั้ง CSMJU_PROFILE=core-hub ให้ทุก job (repo ปลายทางตั้งเองไม่ได้)
+#   2. ไม่รัน SEC-04/SEC-05, GH-03, GH-04, UI tokens และ openapi-sync
+# เหตุผลของแต่ละข้อยกเว้นอยู่ใน docs/core-hub-rules.md §3 — ห้ามแก้ไฟล์นี้
+# โดยไม่แก้เอกสารและ scripts/run-core-hub-checks.sh ให้ตรงกัน
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        required: false
+        type: string
+        default: '22'   # tech-stack.md ข้อ 1.1 ล็อก Node 22.x
+
+env:
+  CSMJU_PROFILE: core-hub
+  # The tag of this file — every job checks out the scripts from it, so the
+  # pin in ci.yml really pins them. github.job_workflow_sha is empty in a
+  # called workflow and a checkout with no ref takes main. Moves with VERSION
+  # on every release (self-test fails when they differ).
+  STANDARDS_ENTRY_REF: v1.8.3
+
+jobs:
+  convention-check:
+    name: Convention Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/checkout@v4
+        id: tools
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          path: .compliance-tools
+      - name: Branch naming
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-branch-name.sh . "${GITHUB_HEAD_REF}"
+      - name: Commit messages
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-commit-messages.sh . "${{ github.event.pull_request.base.sha }}"
+      # GH-03 (guard CI files) / GH-04 (standards submodule) ยกเว้น — ดู core-hub-rules.md §3
+
+  security-scan:
+    name: Security & Stack Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/checkout@v4
+        id: tools
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          path: .compliance-tools
+      - name: Secret scan
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-no-secrets.sh .
+      - name: No token in localStorage
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-no-local-storage.sh .
+      - name: DB isolation
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-db-isolation.sh .
+      # SEC-04/SEC-05 ยกเว้น — Core Hub เป็นผู้ออก token และเป็นหน้า login กลาง
+      - name: Authorized dependencies (core-hub whitelist)
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-authorized-deps.sh .
+
+  api-contract:
+    name: API Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        id: tools
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          path: .compliance-tools
+      - name: API conventions
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-api-conventions.sh .
+
+  data-dictionary-compliance:
+    name: Data Dictionary Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        id: tools
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          path: .compliance-tools
+      # DD-01 ถูกข้ามภายในสคริปต์เองเมื่อ CSMJU_PROFILE=core-hub
+      - name: Forbidden field aliases
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-field-aliases.sh .
+      - name: snake_case fields
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-snake-case.sh .
+      - name: No hardcoded faculty list
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-no-hardcoded-faculty.sh .
+      - name: Money fields are integers
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-money-fields.sh .
+
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        id: tools
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          path: .compliance-tools
+      # ไม่ระบุ version — pnpm/action-setup อ่าน "packageManager" ใน package.json
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+      - name: Install (only when a pnpm lockfile is committed)
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile
+          else
+            echo "ไม่พบ pnpm-lock.yaml — ข้ามการติดตั้ง (QA-01..04 จะถูก skip)"
+          fi
+      - name: QA checks (lint/typecheck/test/build/pnpm-only)
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-qa.sh .
+
+  exception-validation:
+    name: Exception Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        id: tools
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          path: .compliance-tools
+      - name: Validate .compliance-exceptions.yml
+        if: always() && steps.tools.outcome == 'success'
+        run: bash .compliance-tools/scripts/check-exceptions.sh .

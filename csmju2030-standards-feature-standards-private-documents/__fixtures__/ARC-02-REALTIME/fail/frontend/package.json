@@ -1,0 +1,10 @@
+{
+  "name": "frontend",
+  "dependencies": {
+    "next": "16.0.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "socket.io-client": "4.8.3",
+    "@testing-library/user-event": "14.6.0"
+  }
+}

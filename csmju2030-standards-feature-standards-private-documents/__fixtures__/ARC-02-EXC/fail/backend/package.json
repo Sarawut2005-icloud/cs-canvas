@@ -1,0 +1,1 @@
+{ "name": "backend", "dependencies": { "@nestjs/core": "^11.0.0", "@csmju-game/battle": "workspace:*" } }

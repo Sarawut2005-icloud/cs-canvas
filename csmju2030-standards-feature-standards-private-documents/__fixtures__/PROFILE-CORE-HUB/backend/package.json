@@ -1,0 +1,19 @@
+{
+  "name": "core-hub-backend",
+  "dependencies": {
+    "@nestjs/core": "11.0.0",
+    "@nestjs/common": "11.0.0",
+    "@nestjs/jwt": "11.0.0",
+    "@nestjs/passport": "11.0.0",
+    "passport": "0.7.0",
+    "passport-jwt": "4.0.1",
+    "bcrypt": "5.1.1",
+    "prisma": "7.9.1",
+    "@prisma/client": "7.9.1",
+    "sharp": "0.35.4"
+  },
+  "devDependencies": {
+    "typescript": "5.9.0",
+    "jest": "30.0.0"
+  }
+}

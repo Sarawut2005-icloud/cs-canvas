@@ -1,0 +1,214 @@
+name: CSMJU2030 Subsystem Compliance (Reusable)
+
+# Called from every csmju-<subsystem> repo's .github/workflows/ci.yml, pinned
+# by tag (see templates/ci.yml). The pin chooses only this entry point. The
+# checks come from the version the subsystem names in `.standards-version`,
+# so a team bumps by changing that file and the `standards` submodule, never
+# ci.yml (docs/standards-versioning.md).
+#
+# Each job checks out the calling repo (into ".") and this standards repo at
+# STANDARDS_ENTRY_REF with every tag (into ".compliance-tools"), keeps a copy
+# of the pinned entry point
+# outside the workspace, then select-standards-version.sh switches
+# .compliance-tools to the chosen tag and run-job.sh runs that version's checks
+# (scripts/lib/jobs.tsv). The scripts that enforce the rules still come from
+# the untouchable central source, never from the subsystem repo being checked.
+#
+# Every job selects on its own instead of depending on a shared job: a
+# required check whose job is skipped counts as passed.
+
+on:
+  workflow_call:
+    inputs:
+      subsystem_name:
+        required: true
+        type: string
+      node_version:
+        required: false
+        type: string
+        default: '22'   # tech-stack.md ข้อ 1.1 ล็อก Node 22.x
+
+env:
+  PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+  # The tag of this file. Every job checks out the entry point from it, so
+  # the pin in ci.yml really pins GH-03, GH-04 and run-job.sh. It has to be
+  # written here: github.job_workflow_sha is empty in a called workflow, and
+  # a checkout with no ref silently takes main. Moves with VERSION on every
+  # release (self-test fails when they differ).
+  STANDARDS_ENTRY_REF: v1.8.3
+
+jobs:
+  convention-check:
+    name: Convention Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/checkout@v4
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          fetch-depth: 0
+          path: .compliance-tools
+      - name: Select standards version (.standards-version)
+        run: |
+          cp -R .compliance-tools "$RUNNER_TEMP/csmju-entry"
+          bash "$RUNNER_TEMP/csmju-entry/scripts/select-standards-version.sh" .
+      - name: Branch naming · commit messages · CI guard
+        run: bash "$RUNNER_TEMP/csmju-entry/scripts/run-job.sh" convention .
+
+  standards-version-check:
+    name: Standards Version Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          fetch-depth: 0
+          path: .compliance-tools
+      - name: Select standards version (.standards-version)
+        run: |
+          cp -R .compliance-tools "$RUNNER_TEMP/csmju-entry"
+          bash "$RUNNER_TEMP/csmju-entry/scripts/select-standards-version.sh" .
+      - name: Standards version · submodule pointer
+        run: bash "$RUNNER_TEMP/csmju-entry/scripts/run-job.sh" version .
+
+  security-scan:
+    name: Security & Stack Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/checkout@v4
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          fetch-depth: 0
+          path: .compliance-tools
+      - name: Select standards version (.standards-version)
+        run: |
+          cp -R .compliance-tools "$RUNNER_TEMP/csmju-entry"
+          bash "$RUNNER_TEMP/csmju-entry/scripts/select-standards-version.sh" .
+      - name: Secrets · localStorage · JWT · DB isolation · dependencies · NestJS
+        run: bash "$RUNNER_TEMP/csmju-entry/scripts/run-job.sh" security .
+
+  api-contract-sync:
+    name: API Contract Sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          fetch-depth: 0
+          path: .compliance-tools
+      - name: Select standards version (.standards-version)
+        run: |
+          cp -R .compliance-tools "$RUNNER_TEMP/csmju-entry"
+          bash "$RUNNER_TEMP/csmju-entry/scripts/select-standards-version.sh" .
+      # API-01 รัน `pnpm run generate:openapi` ของ subsystem จริง จึงต้องมี
+      # toolchain ใน job นี้ด้วย ไม่ใช่แค่ใน Code Quality — ไม่มีแล้ว check
+      # จะ skip เงียบ ๆ ทั้งที่ดูเหมือนผ่าน
+      # ไม่ระบุ version — pnpm/action-setup อ่าน "packageManager" ใน package.json
+      # ของ repo ที่เรียก ถ้าฮาร์ดโค้ดไว้แล้วไม่ตรงกัน action จะ error ทันที
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+      - name: Install (only when a pnpm lockfile is committed)
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile
+          else
+            echo "ไม่พบ pnpm-lock.yaml — ข้ามการติดตั้ง (API-01 จะถูก skip)"
+          fi
+      - name: openapi.json sync · API conventions
+        run: bash "$RUNNER_TEMP/csmju-entry/scripts/run-job.sh" api .
+
+  data-dictionary-compliance:
+    name: Data Dictionary Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          fetch-depth: 0
+          path: .compliance-tools
+      - name: Select standards version (.standards-version)
+        run: |
+          cp -R .compliance-tools "$RUNNER_TEMP/csmju-entry"
+          bash "$RUNNER_TEMP/csmju-entry/scripts/select-standards-version.sh" .
+      - name: Field aliases · snake_case · faculty list · money fields
+        run: bash "$RUNNER_TEMP/csmju-entry/scripts/run-job.sh" data-dictionary .
+
+  ui-token-compliance:
+    name: UI Token Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          fetch-depth: 0
+          path: .compliance-tools
+      - name: Select standards version (.standards-version)
+        run: |
+          cp -R .compliance-tools "$RUNNER_TEMP/csmju-entry"
+          bash "$RUNNER_TEMP/csmju-entry/scripts/select-standards-version.sh" .
+      - name: Design token usage
+        run: bash "$RUNNER_TEMP/csmju-entry/scripts/run-job.sh" ui .
+
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          fetch-depth: 0
+          path: .compliance-tools
+      - name: Select standards version (.standards-version)
+        run: |
+          cp -R .compliance-tools "$RUNNER_TEMP/csmju-entry"
+          bash "$RUNNER_TEMP/csmju-entry/scripts/select-standards-version.sh" .
+      # ไม่ระบุ version — pnpm/action-setup อ่าน "packageManager" ใน package.json
+      # ของ repo ที่เรียก ถ้าฮาร์ดโค้ดไว้แล้วไม่ตรงกัน action จะ error ทันที
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+      - name: Install (only when a pnpm lockfile is committed)
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile
+          else
+            echo "ไม่พบ pnpm-lock.yaml — ข้ามการติดตั้ง (QA-01..04 จะถูก skip)"
+          fi
+      - name: QA checks (lint/typecheck/test/build/pnpm-only)
+        run: bash "$RUNNER_TEMP/csmju-entry/scripts/run-job.sh" quality .
+
+  exception-validation:
+    name: Exception Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: CSMJU2030/csmju2030-standards
+          ref: ${{ env.STANDARDS_ENTRY_REF }}
+          fetch-depth: 0
+          path: .compliance-tools
+      - name: Select standards version (.standards-version)
+        run: |
+          cp -R .compliance-tools "$RUNNER_TEMP/csmju-entry"
+          bash "$RUNNER_TEMP/csmju-entry/scripts/select-standards-version.sh" .
+      - name: Validate .compliance-exceptions.yml
+        run: bash "$RUNNER_TEMP/csmju-entry/scripts/run-job.sh" exceptions .

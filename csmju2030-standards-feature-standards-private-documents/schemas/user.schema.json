@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://csmju2030.ac.th/schemas/user.schema.json",
+  "title": "CoreHubAccount",
+  "description": "data ของ GET /api/v1/auth/me — บัญชี Core Hub ของผู้เรียก (docs/reference-data.md ข้อ 5.3) · ระบบย่อยเก็บได้แค่ id เป็น core_user_id · ข้อมูลบุคคล (ชื่อ รหัส คณะ) อยู่ที่ /api/v1/people/me",
+  "type": "object",
+  "required": ["id", "email", "role"],
+  "properties": {
+    "id": {
+      "description": "= claim sub · string ทึบ ไม่ใช่ UUID เสมอไป (user-<studentCode> หรือ UUID) — เก็บเป็น text ห้าม validate เป็น UUID",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "email": { "description": "แสดงผลเท่านั้น ห้ามใช้เป็นกุญแจ", "type": "string" },
+    "username": { "type": ["string", "null"] },
+    "role": { "$ref": "role.schema.json" },
+    "sessionId": { "description": "= claim sid — ห้ามเก็บ ห้าม log", "type": "string" },
+    "profileImageId": {
+      "description": "รูปโปรไฟล์ที่ GET /api/v1/images/<id>/file",
+      "type": ["string", "null"]
+    },
+    "hasPassword": { "type": "boolean" }
+  },
+  "additionalProperties": true
+}

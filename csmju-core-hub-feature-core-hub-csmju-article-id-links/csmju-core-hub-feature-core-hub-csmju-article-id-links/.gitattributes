@@ -1,0 +1,9 @@
+# Files that run inside Linux containers must keep LF line endings even when
+# checked out on Windows with core.autocrlf=true: a CRLF shebang makes the
+# container entrypoint fail with "not found", and CRLF breaks heredocs in
+# Dockerfiles and multi-line values in compose files.
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+*.Dockerfile  text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf

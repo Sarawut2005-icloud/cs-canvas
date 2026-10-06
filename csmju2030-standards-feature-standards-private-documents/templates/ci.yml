@@ -1,0 +1,21 @@
+# .github/workflows/ci.yml
+# Copy this file, unmodified, into every csmju-<subsystem> repo.
+# This file is short and fixed on purpose — CODEOWNERS restricts who can
+# change it (see templates/CODEOWNERS). The tag below pins only the entry
+# point of the checks: which version checks this repo comes from
+# `.standards-version`, so a team bumps by changing that file and the
+# `standards` submodule, never this one (docs/standards-versioning.md).
+name: CI
+
+on:
+  pull_request:
+    # develop is optional; listing it here costs nothing for repos that do not
+    # have one (github-workflow.md 1.5)
+    branches: [main, develop]
+
+jobs:
+  compliance:
+    uses: CSMJU2030/csmju2030-standards/.github/workflows/subsystem-compliance.yml@v1.5.2
+    with:
+      subsystem_name: csmju-<subsystem-name>
+    secrets: inherit

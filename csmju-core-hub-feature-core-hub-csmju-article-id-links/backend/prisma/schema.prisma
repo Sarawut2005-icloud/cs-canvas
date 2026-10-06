@@ -1,0 +1,1171 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                 String           @id
+  username           String?          @unique
+  email              String           @unique
+  /// null for accounts that only sign in through MJU SSO — they have no local password
+  passwordHash       String?          @map("password_hash")
+  /// HMAC of the MJU SSO citizenID (never the raw value); set once the account is linked to MJU SSO
+  mjuSubject         String?          @unique @map("mju_subject")
+  roleId             String           @map("role_id")
+  /// The user's current profile picture; uploading a new one replaces it.
+  profileImageId     String?          @unique @map("profile_image_id")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+  sessions           Session[]
+  role               Role             @relation(fields: [roleId], references: [id])
+  subsystems         Subsystem[]
+  reviewedSubsystems Subsystem[]      @relation("SubsystemReviewer")
+  subsystemEvents    SubsystemEvent[]
+  profileImage       Image?           @relation("UserProfileImage", fields: [profileImageId], references: [id], onDelete: SetNull)
+  images             Image[]          @relation("ImageUploader")
+  announcements      Announcement[]
+  hiddenExternalContent HiddenExternalContent[]
+  notifications      Notification[]
+  requestedChanges   SubsystemChangeRequest[] @relation("ChangeRequester")
+  reviewedChanges    SubsystemChangeRequest[] @relation("ChangeReviewer")
+  permissionGrants   UserPermissionGrant[]    @relation("GrantHolder")
+  grantedPermissions UserPermissionGrant[]    @relation("GrantGranter")
+
+  @@index([roleId])
+  @@map("users")
+}
+
+/// A permission given to one account on top of its role — a closed list
+/// (`GRANTABLE_PERMISSIONS`), never put in the token. Lets an admin say who
+/// may register a subsystem without handing a whole role the right.
+model UserPermissionGrant {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  permission  String
+  /// null when the grant came from a migration rather than an admin
+  grantedById String?  @map("granted_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user      User  @relation("GrantHolder", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy User? @relation("GrantGranter", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, permission])
+  @@index([grantedById])
+  @@map("user_permission_grants")
+}
+
+model Subsystem {
+  id                 String                  @id @default(uuid())
+  name               String                  @unique
+  displayName        String                  @map("display_name")
+  ownerId            String                  @map("owner_id")
+  repo               String
+  standardsVersion   String                  @map("standards_version")
+  defaultRoleMapping Json                    @map("default_role_mapping")
+  callbackUrl        String                  @map("callback_url")
+  /// Origin the backoffice Monitor probes at `<baseUrl>/api/health` — optional, same URL rules as callbackUrl
+  baseUrl            String?                 @map("base_url")
+  /// Where the portal menu and "ระบบย่อยทั้งหมด" group it; the owner may change it.
+  category           SubsystemCategory       @default(OTHER)
+  /// One line for users on the portal — what the subsystem is for.
+  description        String?
+  /// false hides it from every user's menu (demo / developer systems); admin only.
+  listedInMenu       Boolean                 @default(true) @map("listed_in_menu")
+  approvalStatus     SubsystemApprovalStatus @default(PENDING) @map("approval_status")
+  status             SubsystemStatus         @default(INACTIVE)
+  reviewedById       String?                 @map("reviewed_by_id")
+  reviewedAt         DateTime?               @map("reviewed_at")
+  rejectionReason    String?                 @map("rejection_reason")
+  statusReason       String?                 @map("status_reason")
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+
+  owner      User                 @relation(fields: [ownerId], references: [id])
+  reviewedBy User?                @relation("SubsystemReviewer", fields: [reviewedById], references: [id])
+  exceptions SubsystemException[]
+  events     SubsystemEvent[]
+  changeRequests SubsystemChangeRequest[]
+  images     Image[]
+
+  @@index([ownerId])
+  @@index([approvalStatus])
+  @@index([status])
+  @@map("subsystems")
+}
+
+model SubsystemException {
+  id          String                   @id @default(uuid())
+  subsystemId String                   @map("subsystem_id")
+  username    String
+  role        String
+  reason      String
+  status      SubsystemExceptionStatus @default(REQUESTED)
+  createdAt   DateTime                 @default(now()) @map("created_at")
+  updatedAt   DateTime                 @updatedAt @map("updated_at")
+
+  subsystem Subsystem @relation(fields: [subsystemId], references: [id], onDelete: Cascade)
+
+  @@index([subsystemId])
+  @@index([username])
+  @@map("subsystem_exceptions")
+}
+
+/// Every change to a subsystem's registration or lifecycle, newest last.
+/// Shown as the history timeline in the backoffice.
+model SubsystemEvent {
+  id          String               @id @default(uuid())
+  subsystemId String               @map("subsystem_id")
+  actorId     String               @map("actor_id")
+  action      SubsystemEventAction
+  reason      String?
+  /// `{ "<field>": { "from": …, "to": … } }` — only the fields that changed (never tokens or passwords)
+  changes     Json?
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+
+  subsystem Subsystem @relation(fields: [subsystemId], references: [id], onDelete: Cascade)
+  actor     User      @relation(fields: [actorId], references: [id])
+
+  @@index([subsystemId, createdAt])
+  @@index([actorId])
+  @@map("subsystem_events")
+}
+
+/// An owner's request to change the reviewed fields (callbackUrl, baseUrl,
+/// defaultRoleMapping) of an approved subsystem. An admin approves it — all
+/// fields take effect at once — or rejects it; until then the subsystem keeps
+/// its current values. At most one PENDING request per subsystem.
+model SubsystemChangeRequest {
+  id            String                 @id @default(uuid())
+  subsystemId   String                 @map("subsystem_id")
+  requestedById String                 @map("requested_by_id")
+  /// The requested new values, keyed by field
+  changes       Json
+  status        ChangeRequestStatus    @default(PENDING)
+  /// Why it was rejected
+  reason        String?
+  reviewedById  String?                @map("reviewed_by_id")
+  reviewedAt    DateTime?              @map("reviewed_at")
+  createdAt     DateTime               @default(now()) @map("created_at")
+  updatedAt     DateTime               @updatedAt @map("updated_at")
+
+  subsystem   Subsystem @relation(fields: [subsystemId], references: [id], onDelete: Cascade)
+  requestedBy User      @relation("ChangeRequester", fields: [requestedById], references: [id])
+  reviewedBy  User?     @relation("ChangeReviewer", fields: [reviewedById], references: [id])
+
+  @@index([subsystemId, status])
+  @@index([status, createdAt])
+  @@index([requestedById])
+  @@index([reviewedById])
+  @@map("subsystem_change_requests")
+}
+
+enum ChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// An uploaded image. The file itself lives on disk under UPLOAD_DIR —
+/// only its metadata is stored here. `id` doubles as the file name, so the
+/// uploader's original file name is never used.
+model Image {
+  id            String        @id @default(uuid())
+  category      ImageCategory
+  /// The subsystem the upload came through; null when uploaded in Core Hub.
+  subsystemId   String?       @map("subsystem_id")
+  uploadedById  String        @map("uploaded_by_id")
+  mimeType      String        @map("mime_type")
+  sizeBytes     Int           @map("size_bytes")
+  width         Int
+  height        Int
+  /// Relative to UPLOAD_DIR. Internal only — never returned by the API.
+  storagePath   String        @unique @map("storage_path")
+  /// A 400px-wide copy for list pages; null when the image is already that
+  /// small, or for profile pictures.
+  thumbnailPath String?       @unique @map("thumbnail_path")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  deletedAt     DateTime?     @map("deleted_at")
+
+  subsystem  Subsystem? @relation(fields: [subsystemId], references: [id], onDelete: SetNull)
+  uploadedBy User       @relation("ImageUploader", fields: [uploadedById], references: [id])
+  profileOf  User?      @relation("UserProfileImage")
+
+  @@index([category, createdAt])
+  @@index([uploadedById])
+  @@index([subsystemId])
+  @@map("images")
+}
+
+/// Department announcements managed from the backoffice.
+model Announcement {
+  id             String    @id @default(uuid())
+  title          String
+  content        String
+  category       String
+  isPublished    Boolean   @default(false) @map("is_published")
+  /// Set the first time the announcement is published; kept when unpublished.
+  publishedAt    DateTime? @map("published_at")
+  /// Optional cover image, stored inline (at most 2 MB, checked by the API).
+  imageData      Bytes?    @map("image_data")
+  imageType      String?   @map("image_type")
+  /// Changes with every new image — used to bust caches of the image URL.
+  imageUpdatedAt DateTime? @map("image_updated_at")
+  authorId       String    @map("author_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  author User @relation(fields: [authorId], references: [id])
+
+  @@index([isPublished, publishedAt])
+  @@index([authorId])
+  @@map("announcements")
+}
+
+/// A message for one account, shown under the portal's bell.
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  title     String
+  body      String?
+  /// Where the notification leads; a path inside the portal or an absolute URL.
+  link      String?
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+/// What csmju.com publishes that the front page may show.
+enum ExternalContentKind {
+  ARTICLE
+  BANNER
+}
+
+/// An item from csmju.com that an admin hid from the public front page.
+/// csmju.com itself is untouched — deleting the row shows the item again.
+model HiddenExternalContent {
+  id         String              @id @default(uuid())
+  kind       ExternalContentKind
+  /// The item's id on csmju.com.
+  externalId String              @map("external_id")
+  /// Title when it was hidden, so the backoffice can list it even after
+  /// csmju.com drops the item.
+  title      String
+  hiddenById String              @map("hidden_by_id")
+  hiddenAt   DateTime            @default(now()) @map("hidden_at")
+
+  hiddenBy User @relation(fields: [hiddenById], references: [id])
+
+  @@unique([kind, externalId])
+  @@index([hiddenById])
+  @@map("hidden_external_content")
+}
+
+model Session {
+  id               String        @id
+  userId           String        @map("user_id")
+  status           SessionStatus @default(ACTIVE)
+  refreshTokenHash String        @map("refresh_token_hash")
+  /// How the session was opened; `created_at` is the sign-in time (refresh rotates on the same row)
+  authMethod       AuthMethod    @default(PASSWORD) @map("auth_method")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  expiresAt        DateTime      @map("expires_at")
+  revokedAt        DateTime?     @map("revoked_at")
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Role {
+  id          String           @id
+  name        String           @unique
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  permissions RolePermission[]
+  users       User[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id
+  name        String           @unique
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id")
+  permissionId String     @map("permission_id")
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+enum AuthMethod {
+  PASSWORD
+  MJU_SSO
+}
+
+enum SessionStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum SubsystemApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Groups of the portal's subsystem menu (PM 2026-10-05).
+enum SubsystemCategory {
+  LEARNING
+  CODING
+  CAREER_ACTIVITY
+  COMMUNITY
+  STUDENT_SERVICE
+  TOOLS
+  OTHER
+}
+
+enum SubsystemStatus {
+  INACTIVE
+  ACTIVE
+  SUSPENDED
+}
+
+enum SubsystemExceptionStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+}
+
+enum ImageCategory {
+  PROFILE
+  NEWS
+  GENERAL
+}
+
+enum SubsystemEventAction {
+  SUBMITTED
+  UPDATED
+  APPROVED
+  REJECTED
+  RESUBMITTED
+  ACTIVATED
+  DEACTIVATED
+  SUSPENDED
+  EXCEPTION_REQUESTED
+  EXCEPTION_APPROVED
+  EXCEPTION_REJECTED
+  CHANGE_REQUESTED
+  CHANGE_APPROVED
+  CHANGE_REJECTED
+  CHANGE_CANCELLED
+}
+
+// ===========================================================================
+// master-data (เพิ่มโดยทีมข้อมูลกลาง) — ประวัติบุคคลและข้อมูลวิชาการ
+// ที่ Core Hub v1.0 ยังไม่มี (data-dictionary ข้อ 1.3)
+// - ไม่แก้ model เดิมของ Core Hub (User, Session, Role, ...) แม้แต่บรรทัดเดียว
+// - ทุก model อยู่ใต้เส้นนี้ ตั้งชื่อตาม data-dictionary ข้อ 9
+// - Person.coreUserId อ้างถึง users.id โดยไม่มี relation (ไม่แตะ model User)
+// กลุ่ม: A บุคคล · B อาจารย์ที่ปรึกษา · C ภาคการศึกษา · D รายวิชา · E กลุ่มเรียน
+//        F สถานที่ · G หลักสูตร · H สถานประกอบการ
+//        (ไม่มีการลงทะเบียนเรียน — เป็นข้อมูลของระบบวิชาการ SHARED_DATA ข้อ 2)
+//        J ชั่วโมงกิจกรรม · K ความสนใจ
+// ===========================================================================
+
+// ================= enums =================
+
+enum PersonType {
+  STUDENT
+  STAFF
+}
+
+enum PersonStatus {
+  ACTIVE
+  INACTIVE    // พ้นสภาพ / ลาออก / ย้าย
+  GRADUATED
+}
+
+enum StaffType {
+  LECTURER
+  OFFICER
+  TECHNICIAN
+  OTHER
+}
+
+enum ScheduleType {
+  LECTURE
+  LAB
+  OTHER
+}
+
+// v0.7 ตามสเปก Reference Data ของ PM
+enum RoomType {
+  LECTURE     // ห้องบรรยาย
+  LAB         // ห้องปฏิบัติการ
+  SEMINAR     // ห้องสัมมนา
+  MEETING     // ห้องประชุม
+  PROJECT     // ห้องทำโครงงาน
+  OFFICE      // ห้องทำงาน
+}
+
+enum PlaceType {
+  BUS_STOP
+  PICKUP_POINT
+  SERVICE_POINT
+  PARKING
+  OTHER
+}
+
+enum CurriculumCategory {
+  GENERAL_EDUCATION
+  CORE
+  MAJOR_REQUIRED
+  MAJOR_ELECTIVE
+  FREE_ELECTIVE
+  OTHER
+}
+
+enum HighlightKind {
+  STATISTIC   // ตัวเลขเด่น
+  MILESTONE   // เส้นทางสำคัญ
+}
+
+enum InterestCategory {
+  CAREER
+  TOPIC
+  HOBBY
+}
+
+// ================= A. องค์กร + บุคคล =================
+
+model Faculty {
+  id          String       @id @default(uuid())
+  code        String       @unique                 // science
+  nameTh      String       @map("name_th")
+  nameEn      String       @map("name_en")
+  isActive    Boolean      @default(true) @map("is_active")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @default(now()) @updatedAt @map("updated_at")
+
+  departments Department[]
+  people      Person[]
+  rooms       Room[]
+
+  @@map("faculties")
+}
+
+model Department {
+  id          String       @id @default(uuid())
+  code        String       @unique                 // computer-science
+  facultyId   String       @map("faculty_id")
+  nameTh      String       @map("name_th")
+  nameEn      String       @map("name_en")
+  // v0.6 ข้อมูลติดต่อ (จากเว็บสาขา)
+  officialNameTh String?   @map("official_name_th")
+  address        String?
+  officePhone    String?   @map("office_phone")      // ตัวเลขล้วน ไม่มีขีด
+  officePhoneNote String?  @map("office_phone_note") // รูปแบบตามต้นฉบับ เช่น 053-873890-3
+  fax            String?
+  email          String?
+  mapUrl         String?   @map("map_url")
+  descriptionTh  String?   @map("description_th")
+  isActive    Boolean      @default(true) @map("is_active")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @default(now()) @updatedAt @map("updated_at")
+
+  faculty     Faculty      @relation(fields: [facultyId], references: [id])
+  people      Person[]
+  courses     Course[]
+  curricula   Curriculum[]
+  highlights  DepartmentHighlight[]
+  histories   DepartmentHistory[]
+  newsArticles NewsArticle[]
+  studentProjects StudentProject[]
+  relatedLinks RelatedLink[]
+
+  @@index([facultyId])
+  @@map("departments")
+}
+
+/// ประวัติบุคคล (ไม่ใช่บัญชี login) — บัญชี login อยู่ที่ Core Hub
+model Person {
+  id              String        @id @default(uuid())
+  /// users.id ของ Core Hub (claim `sub`) — ว่างได้ถ้ายังไม่มีบัญชี
+  /// ตั้งใจไม่ทำ Prisma relation ไปที่ User เพื่อไม่ต้องแก้ model User ของ Core Hub
+  coreUserId      String?       @unique @map("core_user_id")
+  /// รหัสบุคคลของมหาวิทยาลัย: นักศึกษา = รหัสนักศึกษา, บุคลากร = ส่วนหน้าอีเมลมหาวิทยาลัย
+  personCode      String        @unique @map("person_code")
+  personType      PersonType    @map("person_type")
+  staffType       StaffType?    @map("staff_type")
+  academicTitle   String?       @map("academic_title")
+  fullNameTh      String        @map("full_name_th")
+  fullNameEn      String?       @map("full_name_en")
+  /// อีเมลมหาวิทยาลัยตามทะเบียน ใช้ตอนสร้างบัญชีใน Core Hub (email ที่ใช้ login เป็นของ Core Hub)
+  universityEmail String?       @unique @map("university_email")
+  facultyId       String        @map("faculty_id")
+  departmentId    String?       @map("department_id")
+  entryYear       Int?          @map("entry_year")      // ปี พ.ศ. ที่เข้าศึกษา
+  // v0.6 โปรไฟล์บุคลากร (ข้อมูลสาธารณะจากเว็บสาขา)
+  jobTitle        String?       @map("job_title")       // ตำแหน่งงาน เช่น ผู้ช่วยศาสตราจารย์, นักวิชาการคอมพิวเตอร์
+  officePhone     String?       @map("office_phone")    // ตัวเลขล้วน
+  officePhoneExt  String?       @map("office_phone_ext")
+  education       String?
+  expertise       String?
+  biography       String?
+  experience      String?
+  research        String?
+  photoUrl        String?       @map("photo_url")
+  curriculumId    String?       @map("curriculum_id")
+  status          PersonStatus  @default(ACTIVE)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  faculty            Faculty             @relation(fields: [facultyId], references: [id])
+  department         Department?         @relation(fields: [departmentId], references: [id])
+  curriculum         Curriculum?         @relation(fields: [curriculumId], references: [id])
+  advisors           AdvisorAssignment[] @relation("advisee")
+  advisees           AdvisorAssignment[] @relation("advisor")
+  sectionsTaught     SectionInstructor[]
+  roomsOwned         Room[]
+  interests          PersonInterest[]
+  projectsAdvised    StudentProject[]
+  projectMemberships StudentProjectMember[]
+  enrollments        SectionEnrollment[]
+
+  @@index([personType, status])
+  @@index([departmentId, entryYear])
+  @@map("people")
+}
+
+// ================= B. อาจารย์ที่ปรึกษา =================
+
+model AdvisorAssignment {
+  id          String   @id @default(uuid())
+  studentId   String   @map("student_id")
+  advisorId   String   @map("advisor_id")
+  startTermId String?  @map("start_term_id")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  student     Person   @relation("advisee", fields: [studentId], references: [id])
+  advisor     Person   @relation("advisor", fields: [advisorId], references: [id])
+  startTerm   Term?    @relation(fields: [startTermId], references: [id])
+
+  @@unique([studentId, advisorId])
+  @@index([advisorId])
+  @@map("advisor_assignments")
+}
+
+// ================= C. ภาคการศึกษา =================
+
+model Term {
+  id           String   @id @default(uuid())
+  code         String   @unique              // 2569-1 (ภาค 3 = ฤดูร้อน)
+  academicYear Int      @map("academic_year")
+  semester     Int
+  startDate    DateTime @db.Date @map("start_date")
+  endDate      DateTime @db.Date @map("end_date")
+  /// มีได้ภาคเดียว — ตั้งภาคใหม่เป็น true แล้วภาคอื่นเป็น false อัตโนมัติ (trigger)
+  isCurrent    Boolean  @default(false) @map("is_current")
+  isActive     Boolean  @default(true) @map("is_active")   // v0.7
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  events        TermEvent[]
+  sections      CourseSection[]
+  advisorStarts AdvisorAssignment[]
+
+  @@unique([academicYear, semester])
+  @@map("terms")
+}
+
+/// รายการในปฏิทินการศึกษา (จาก reg.mju.ac.th)
+model TermEvent {
+  id              String   @id @default(uuid())
+  termId          String   @map("term_id")
+  eventCode       String   @map("event_code")        // term_start, midterm_exam, ...
+  parentEventCode String?  @map("parent_event_code")
+  nameTh          String   @map("name_th")
+  sortOrder       Int      @map("sort_order")
+  startsAt        DateTime @db.Timestamptz(3) @map("starts_at")
+  endsAt          DateTime @db.Timestamptz(3) @map("ends_at")
+  note            String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  term            Term     @relation(fields: [termId], references: [id])
+
+  @@unique([termId, eventCode])
+  @@index([eventCode])
+  @@map("term_events")
+}
+
+// ================= D. รายวิชา =================
+
+model Course {
+  id             String      @id @default(uuid())
+  /// รหัสเต็มตามระบบมหาวิทยาลัย รวมรุ่นของวิชา เช่น 10301111-1 (รหัสเดียวกันต่างรุ่นเป็นคนละวิชา)
+  code           String      @unique
+  baseCode       String      @map("base_code")       // 10301111
+  /// v0.6 รหัสตามระบบทะเบียน เช่น 10301111-1 (เติมเมื่อยืนยันได้)
+  registrarCode  String?     @unique @map("registrar_code")
+  /// v0.6 หมวด/กลุ่มตามคำอธิบายในเว็บสาขา
+  categoryLabel  String?     @map("category_label")
+  lectureHours   Int?        @map("lecture_hours")
+  labHours       Int?        @map("lab_hours")
+  selfStudyHours Int?        @map("self_study_hours")
+  nameTh         String      @map("name_th")
+  nameEn         String?     @map("name_en")
+  credits        Int
+  creditPattern  String?     @map("credit_pattern")  // 3(2-3-5)
+  departmentId   String?     @map("department_id")
+  ownerUnitName  String?     @map("owner_unit_name") // หน่วยงานเจ้าของวิชาที่ไม่อยู่ในระบบ
+  descriptionTh  String?     @map("description_th")
+  descriptionEn  String?     @map("description_en")
+  isActive       Boolean     @default(true) @map("is_active")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @default(now()) @updatedAt @map("updated_at")
+
+  department        Department?          @relation(fields: [departmentId], references: [id])
+  sections          CourseSection[]
+  prerequisites     CoursePrerequisite[] @relation("course_requires")
+  requiredBy        CoursePrerequisite[] @relation("course_required_by")
+  curriculumCourses CurriculumCourse[]
+
+  @@index([baseCode])
+  @@map("courses")
+}
+
+model CoursePrerequisite {
+  id                   String   @id @default(uuid())
+  courseId             String   @map("course_id")
+  prerequisiteCourseId String   @map("prerequisite_course_id")
+  note                 String?
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
+
+  course               Course   @relation("course_requires", fields: [courseId], references: [id])
+  prerequisiteCourse   Course   @relation("course_required_by", fields: [prerequisiteCourseId], references: [id])
+
+  @@unique([courseId, prerequisiteCourseId])
+  @@map("course_prerequisites")
+}
+
+// ================= E. กลุ่มเรียน / ตารางสอน =================
+
+model CourseSection {
+  id          String   @id @default(uuid())
+  courseId    String   @map("course_id")
+  termId      String   @map("term_id")
+  sectionNo   String   @map("section_no")
+  capacity    Int?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  course      Course   @relation(fields: [courseId], references: [id])
+  term        Term     @relation(fields: [termId], references: [id])
+  instructors SectionInstructor[]
+  schedules   SectionSchedule[]
+  enrollments SectionEnrollment[]
+
+  @@unique([courseId, termId, sectionNo])
+  @@index([termId])
+  @@map("course_sections")
+}
+
+model SectionInstructor {
+  id           String        @id @default(uuid())
+  sectionId    String        @map("section_id")
+  instructorId String        @map("instructor_id")
+  isPrimary    Boolean       @default(false) @map("is_primary")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  section      CourseSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  instructor   Person        @relation(fields: [instructorId], references: [id])
+
+  @@unique([sectionId, instructorId])
+  @@index([instructorId])
+  @@map("section_instructors")
+}
+
+model SectionSchedule {
+  id           String        @id @default(uuid())
+  sectionId    String        @map("section_id")
+  scheduleType ScheduleType  @default(LECTURE) @map("schedule_type")
+  dayOfWeek    Int           @map("day_of_week")      // 1 = จันทร์ ... 7 = อาทิตย์
+  startTime    String        @map("start_time")       // "09:00" เวลาประเทศไทย
+  endTime      String        @map("end_time")
+  roomId       String?       @map("room_id")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  section      CourseSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  room         Room?         @relation(fields: [roomId], references: [id])
+
+  @@index([roomId, dayOfWeek])
+  @@map("section_schedules")
+}
+
+/// นักศึกษาที่ลงทะเบียนในกลุ่มเรียน — ที่มาของตารางเรียนรายคน
+model SectionEnrollment {
+  id        String        @id @default(uuid())
+  sectionId String        @map("section_id")
+  studentId String        @map("student_id")
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  section   CourseSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  student   Person        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([sectionId, studentId])
+  @@index([studentId])
+  @@map("section_enrollments")
+}
+
+// ================= F. สถานที่ =================
+
+model Building {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  nameTh    String   @map("name_th")
+  nameEn    String?  @map("name_en")
+  latitude  Float?
+  longitude Float?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  rooms     Room[]
+  places    Place[]
+
+  @@map("buildings")
+}
+
+model Room {
+  id            String   @id @default(uuid())
+  code          String   @unique
+  buildingId    String   @map("building_id")
+  nameTh        String   @map("name_th")
+  floor         Int?
+  roomType      RoomType @map("room_type")
+  capacity      Int?
+  computerCount Int?     @map("computer_count")
+  isBookable    Boolean  @default(false) @map("is_bookable")
+  photoUrl      String?  @map("photo_url")
+  ownerId       String?  @map("owner_id")             // เจ้าของห้อง เช่น ห้องพักอาจารย์
+  facultyCode   String?  @map("faculty_code")         // v0.7 อ้างอิง faculties.code
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  building      Building @relation(fields: [buildingId], references: [id])
+  owner         Person?  @relation(fields: [ownerId], references: [id])
+  faculty       Faculty? @relation(fields: [facultyCode], references: [code])
+  schedules     SectionSchedule[]
+
+  @@index([buildingId])
+  @@index([facultyCode])
+  @@index([isActive])
+  @@map("rooms")
+}
+
+model Place {
+  id          String    @id @default(uuid())
+  code        String    @unique
+  nameTh      String    @map("name_th")
+  nameEn      String?   @map("name_en")
+  placeType   PlaceType @map("place_type")
+  buildingId  String?   @map("building_id")
+  latitude    Float?
+  longitude   Float?
+  description String?
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  building    Building? @relation(fields: [buildingId], references: [id])
+
+  @@index([placeType])
+  @@map("places")
+}
+
+// ================= G. หลักสูตร =================
+
+model Curriculum {
+  id             String     @id @default(uuid())
+  /// รหัสหลักสูตรของมหาวิทยาลัย เช่น 65304010
+  code           String     @unique
+  departmentId   String     @map("department_id")
+  nameTh         String     @map("name_th")
+  nameEn         String?    @map("name_en")
+  curriculumYear Int        @map("curriculum_year")   // ปี พ.ศ. ของหลักสูตร
+  totalCredits   Int?       @map("total_credits")
+  /// v0.6 รหัสหลักสูตรระดับประเทศ (สกอ./อว.) 14 หลัก
+  nationalCode   String?    @unique @map("national_code")
+  degreeFullTh   String?    @map("degree_full_th")
+  degreeShortTh  String?    @map("degree_short_th")
+  degreeFullEn   String?    @map("degree_full_en")
+  degreeShortEn  String?    @map("degree_short_en")
+  studyDurationYears Int?   @map("study_duration_years")
+  instructionLanguage String? @map("instruction_language")
+  philosophyTh   String?    @map("philosophy_th")
+  significanceTh String?    @map("significance_th")
+  visionTh       String?    @map("vision_th")
+  missionTh      String?    @map("mission_th")
+  isActive       Boolean    @default(true) @map("is_active")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  department       Department                  @relation(fields: [departmentId], references: [id])
+  people           Person[]
+  courses          CurriculumCourse[]
+  planSlots        CurriculumPlanSlot[]
+  creditRules      CurriculumCreditRule[]
+  learningOutcomes CurriculumLearningOutcome[]
+  objectives       CurriculumObjective[]
+  courseGroups     CurriculumCourseGroup[]
+
+  @@map("curricula")
+}
+
+/// วิชาที่ระบุชัดในหลักสูตร + แผนแนะนำ
+model CurriculumCourse {
+  id                  String             @id @default(uuid())
+  curriculumId        String             @map("curriculum_id")
+  courseId            String             @map("course_id")
+  category            CurriculumCategory
+  isRequired          Boolean            @default(false) @map("is_required")
+  /// วิชาที่อยู่กลุ่มเดียวกันให้เลือกเรียน 1 วิชา เช่น "Y4S1" = สหกิจ / การเรียนรู้อิสระ / ต่างประเทศ
+  choiceGroup         String?            @map("choice_group")
+  /// v0.6 กลุ่มวิชาในโครงสร้างหลักสูตร
+  courseGroupId       String?            @map("course_group_id")
+  /// v0.6 นับหน่วยกิตในแผนการเรียนไหม (ทางเลือกอื่นในกลุ่มเลือก 1 = false)
+  isCountedInPlan     Boolean            @default(true) @map("is_counted_in_plan")
+  planNote            String?            @map("plan_note")
+  recommendedYear     Int?               @map("recommended_year")
+  recommendedSemester Int?               @map("recommended_semester")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @default(now()) @updatedAt @map("updated_at")
+
+  curriculum          Curriculum         @relation(fields: [curriculumId], references: [id])
+  course              Course             @relation(fields: [courseId], references: [id])
+  courseGroup         CurriculumCourseGroup? @relation(fields: [courseGroupId], references: [id])
+
+  @@unique([curriculumId, courseId])
+  @@index([courseGroupId])
+  @@map("curriculum_courses")
+}
+
+/// ช่องวิชาเลือกในแผนการเรียน เช่น ปี 3 ภาค 1 เอกเลือก 4 วิชา
+model CurriculumPlanSlot {
+  id                  String             @id @default(uuid())
+  curriculumId        String             @map("curriculum_id")
+  category            CurriculumCategory
+  recommendedYear     Int                @map("recommended_year")
+  recommendedSemester Int                @map("recommended_semester")
+  slotCount           Int                @map("slot_count")
+  creditsPerSlot      Int                @map("credits_per_slot")
+  /// v0.6 ชื่อช่องตามแผน เช่น "วิชาเอกเลือก", "หมวดวิชาศึกษาทั่วไป สมรรถนะด้านภาษาและการสื่อสาร"
+  label               String             @default("")
+  courseGroupId       String?            @map("course_group_id")
+  note                String?
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @default(now()) @updatedAt @map("updated_at")
+
+  curriculum          Curriculum         @relation(fields: [curriculumId], references: [id])
+  courseGroup         CurriculumCourseGroup? @relation(fields: [courseGroupId], references: [id])
+
+  @@unique([curriculumId, recommendedYear, recommendedSemester, label])
+  @@index([courseGroupId])
+  @@map("curriculum_plan_slots")
+}
+
+model CurriculumCreditRule {
+  id           String             @id @default(uuid())
+  curriculumId String             @map("curriculum_id")
+  category     CurriculumCategory
+  minCredits   Int                @map("min_credits")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @default(now()) @updatedAt @map("updated_at")
+
+  curriculum   Curriculum         @relation(fields: [curriculumId], references: [id])
+
+  @@unique([curriculumId, category])
+  @@map("curriculum_credit_rules")
+}
+
+/// ผลลัพธ์การเรียนรู้ของหลักสูตร (PLO)
+model CurriculumLearningOutcome {
+  id            String     @id @default(uuid())
+  curriculumId  String     @map("curriculum_id")
+  code          String                              // PLO1
+  titleTh       String?    @map("title_th")          // v0.6
+  subtitleTh    String?    @map("subtitle_th")       // v0.6
+  descriptionTh String     @map("description_th")
+  sortOrder     Int        @default(0) @map("sort_order")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  curriculum    Curriculum @relation(fields: [curriculumId], references: [id])
+
+  @@unique([curriculumId, code])
+  @@map("curriculum_learning_outcomes")
+}
+
+/// v0.6 กลุ่มวิชาในโครงสร้างหลักสูตร พร้อมหน่วยกิตของกลุ่ม
+model CurriculumCourseGroup {
+  id                   String             @id @default(uuid())
+  curriculumId         String             @map("curriculum_id")
+  category             CurriculumCategory
+  parentNameTh         String             @map("parent_name_th")   // หมวด/กลุ่มหลัก
+  nameTh               String             @map("name_th")          // กลุ่มวิชา
+  /// หน่วยกิตของกลุ่มตามที่เว็บแสดง (กลุ่มเอกเลือกอาจเป็นผลรวมหน่วยกิตของวิชาในกลุ่ม ไม่ใช่เกณฑ์ขั้นต่ำ)
+  listedCredits        Int?               @map("listed_credits")
+  availableCourseCount Int?               @map("available_course_count")
+  sortOrder            Int                @default(0) @map("sort_order")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @default(now()) @updatedAt @map("updated_at")
+
+  curriculum           Curriculum         @relation(fields: [curriculumId], references: [id])
+  courses              CurriculumCourse[]
+  planSlots            CurriculumPlanSlot[]
+
+  @@unique([curriculumId, nameTh])
+  @@map("curriculum_course_groups")
+}
+
+/// v0.6 วัตถุประสงค์ของหลักสูตร
+model CurriculumObjective {
+  id            String     @id @default(uuid())
+  curriculumId  String     @map("curriculum_id")
+  code          String                              // 01
+  titleTh       String     @map("title_th")
+  descriptionTh String     @map("description_th")
+  sortOrder     Int        @default(0) @map("sort_order")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  curriculum    Curriculum @relation(fields: [curriculumId], references: [id])
+
+  @@unique([curriculumId, code])
+  @@map("curriculum_objectives")
+}
+
+// ================= L. เนื้อหาของสาขา (v0.6, จากเว็บสาขา) =================
+
+model DepartmentHighlight {
+  id           String        @id @default(uuid())
+  departmentId String        @map("department_id")
+  kind         HighlightKind
+  label        String
+  value        String
+  sortOrder    Int           @default(0) @map("sort_order")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  department   Department    @relation(fields: [departmentId], references: [id])
+
+  @@unique([departmentId, kind, label])
+  @@map("department_highlights")
+}
+
+model DepartmentHistory {
+  id            String     @id @default(uuid())
+  departmentId  String     @map("department_id")
+  periodLabel   String     @map("period_label")      // "ปีการศึกษา 2536", "บทนำ"
+  academicYear  Int?       @map("academic_year")
+  descriptionTh String     @map("description_th")
+  sortOrder     Int        @default(0) @map("sort_order")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  department    Department @relation(fields: [departmentId], references: [id])
+
+  @@unique([departmentId, periodLabel])
+  @@map("department_histories")
+}
+
+model NewsArticle {
+  id           String     @id @default(uuid())
+  departmentId String     @map("department_id")
+  publishedOn  DateTime   @db.Date @map("published_on")
+  category     String
+  title        String
+  content      String?
+  externalUrl  String?    @map("external_url")
+  imageUrl     String?    @map("image_url")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  @@unique([departmentId, publishedOn, title])
+  @@index([publishedOn])
+  @@map("news_articles")
+}
+
+model StudentProject {
+  id             String     @id @default(uuid())
+  code           String     @unique                  // P09
+  departmentId   String     @map("department_id")
+  title          String
+  academicYear   Int?       @map("academic_year")
+  description    String?
+  advisorId      String?    @map("advisor_id")
+  /// ชื่ออาจารย์ที่ปรึกษาตามต้นฉบับ (เผื่อจับคู่กับ people ไม่ได้)
+  advisorNameText String?   @map("advisor_name_text")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  department     Department @relation(fields: [departmentId], references: [id])
+  advisor        Person?    @relation(fields: [advisorId], references: [id])
+  members        StudentProjectMember[]
+
+  @@map("student_projects")
+}
+
+model StudentProjectMember {
+  id         String         @id @default(uuid())
+  projectId  String         @map("project_id")
+  /// ผูกกับ people เมื่อมีข้อมูลคนนั้น (ตอนนี้ผู้จัดทำรุ่นเก่ายังไม่มีในฐาน)
+  personId   String?        @map("person_id")
+  fullNameTh String         @map("full_name_th")
+  sortOrder  Int            @default(0) @map("sort_order")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @default(now()) @updatedAt @map("updated_at")
+
+  project    StudentProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  person     Person?        @relation(fields: [personId], references: [id])
+
+  @@unique([projectId, fullNameTh])
+  @@map("student_project_members")
+}
+
+model RelatedLink {
+  id           String     @id @default(uuid())
+  departmentId String     @map("department_id")
+  name         String
+  url          String
+  linkType     String     @map("link_type")          // เมนูหลักของเว็บ, โซเชียล, ระบบจองห้อง, ...
+  sortOrder    Int        @default(0) @map("sort_order")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  @@unique([departmentId, name, url])
+  @@map("related_links")
+}
+
+// ================= H. สถานประกอบการ =================
+
+model Company {
+  id                   String   @id @default(uuid())
+  nameTh               String   @map("name_th")
+  nameEn               String?  @map("name_en")
+  businessType         String?  @map("business_type")
+  province             String?
+  address              String?
+  website              String?
+  contactEmail         String?  @map("contact_email")  // ช่องทางกลางของบริษัท ไม่ใช่ของพนักงานรายบุคคล
+  contactPhone         String?  @map("contact_phone")  // ไม่มีขีด
+  hasMou               Boolean  @default(false) @map("has_mou")
+  isCoopAccepted       Boolean  @default(false) @map("is_coop_accepted")
+  isInternshipAccepted Boolean  @default(false) @map("is_internship_accepted")
+  isActive             Boolean  @default(true) @map("is_active")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([province])
+  @@map("companies")
+}
+
+// ================= J. ชั่วโมงกิจกรรม =================
+
+model ActivityHourType {
+  id           String                    @id @default(uuid())
+  code         String                    @unique
+  nameTh       String                    @map("name_th")
+  nameEn       String?                   @map("name_en")
+  description  String?
+  isActive     Boolean                   @default(true) @map("is_active")
+  createdAt    DateTime                  @default(now()) @map("created_at")
+  updatedAt    DateTime                  @default(now()) @updatedAt @map("updated_at")
+
+  requirements ActivityHourRequirement[]
+
+  @@map("activity_hour_types")
+}
+
+model ActivityHourRequirement {
+  id                 String           @id @default(uuid())
+  activityHourTypeId String           @map("activity_hour_type_id")
+  entryYear          Int              @map("entry_year")
+  requiredHours      Int              @map("required_hours")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @default(now()) @updatedAt @map("updated_at")
+
+  activityHourType   ActivityHourType @relation(fields: [activityHourTypeId], references: [id])
+
+  @@unique([activityHourTypeId, entryYear])
+  @@map("activity_hour_requirements")
+}
+
+// ================= K. ความสนใจ =================
+
+model InterestTag {
+  id        String           @id @default(uuid())
+  code      String           @unique
+  nameTh    String           @map("name_th")
+  nameEn    String?          @map("name_en")
+  category  InterestCategory
+  isActive  Boolean          @default(true) @map("is_active")
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @default(now()) @updatedAt @map("updated_at")
+
+  people    PersonInterest[]
+
+  @@map("interest_tags")
+}
+
+model PersonInterest {
+  id            String      @id @default(uuid())
+  personId      String      @map("person_id")
+  interestTagId String      @map("interest_tag_id")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @default(now()) @updatedAt @map("updated_at")
+
+  person        Person      @relation(fields: [personId], references: [id], onDelete: Cascade)
+  interestTag   InterestTag @relation(fields: [interestTagId], references: [id])
+
+  @@unique([personId, interestTagId])
+  @@index([interestTagId])
+  @@map("person_interests")
+}

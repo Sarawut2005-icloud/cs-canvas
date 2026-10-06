@@ -1,0 +1,14 @@
+# .github/workflows/ci.yml
+# Core Hub ใช้ workflow คนละชุดกับระบบย่อย เพราะเป็นผู้ออก token เอง
+# รายการกฎที่ยกเว้นและเหตุผล: csmju2030-standards/docs/core-hub-rules.md
+name: CI
+
+on:
+  pull_request:
+    # feature/* → develop (รวมและทดสอบบน dev server) · develop → main (production)
+    branches: [main, develop]
+
+jobs:
+  compliance:
+    uses: CSMJU2030/csmju2030-standards/.github/workflows/core-hub-compliance.yml@v1.7.0
+    secrets: inherit

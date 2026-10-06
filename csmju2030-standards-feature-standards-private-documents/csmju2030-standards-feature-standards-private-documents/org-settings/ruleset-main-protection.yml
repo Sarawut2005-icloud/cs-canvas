@@ -1,0 +1,65 @@
+# REFERENCE ONLY — this YAML is for humans. GitHub never reads a file with
+# this name; a ruleset only exists once it is created in Settings or via the
+# REST API. The importable payloads are the .json files beside this one:
+#
+#   gh api orgs/CSMJU2030/rulesets  -X POST --input ruleset-main-protection.org.json
+#   gh api repos/CSMJU2030/<repo>/rulesets -X POST --input ruleset-main-protection.repo.json
+#
+# The org-level form needs the `admin:org` scope (and, on a Free plan, may
+# need GitHub Team). The repo-level form works with plain `repo` scope but
+# has to be applied once per subsystem repo — see apply-rulesets.sh.
+
+name: csmju2030-main-protection
+enforcement: active
+target: branch
+
+# actor_id/actor_type is what the API actually accepts — a "@org/team" string
+# is not resolvable. OrganizationAdmin (id 1) is the bootstrap value so the
+# ruleset is usable before any team exists; swap it for the devops team
+# (actor_type: Team, actor_id: <numeric id from
+# `gh api orgs/CSMJU2030/teams/devops --jq .id`>) once that team is created.
+bypass_actors:
+  - actor_id: 1
+    actor_type: OrganizationAdmin
+    bypass_mode: pull_request   # bypass ได้เฉพาะผ่าน PR ไม่ใช่ push ตรง
+
+conditions:
+  repository_name:              # org-level only; omit in the repo-level form
+    include: ["csmju-*"]
+  ref_name:
+    include: ["refs/heads/main"]
+    exclude: []
+
+rules:
+  - type: pull_request
+    parameters:
+      required_approving_review_count: 1
+      dismiss_stale_reviews_on_push: true
+      require_code_owner_review: true
+      require_last_push_approval: true
+      required_review_thread_resolution: true
+
+  # The context must be the name GitHub actually reports, which for a
+  # reusable workflow is "<caller job id> / <job name>". templates/ci.yml
+  # names its job `compliance`, so every context carries that prefix. Using
+  # the bare job name leaves the check permanently "expected" and never
+  # matched, which silently blocks nothing.
+  - type: required_status_checks
+    parameters:
+      strict_required_status_checks_policy: true
+      required_status_checks:
+        - context: "compliance / Convention Check"
+        - context: "compliance / Standards Version Check"
+        - context: "compliance / Security & Stack Scan"
+        - context: "compliance / API Contract Sync"
+        - context: "compliance / Data Dictionary Compliance"
+        - context: "compliance / UI Token Compliance"
+        - context: "compliance / Code Quality"
+        - context: "compliance / Exception Validation"
+
+  # ไม่มี required_linear_history: PR develop → main ต้องเป็น merge commit
+  # (github-workflow.md 1.5) · feature PR ยังเป็น squash โดยคุมที่ merge method
+  # ของ repo (ci-compliance-spec.md 4.2)
+  - type: non_fast_forward          # ห้าม force push
+  - type: deletion                  # ห้ามลบ branch
+  - type: creation                  # ห้ามสร้าง main ใหม่ (API ไม่รับ parameters)

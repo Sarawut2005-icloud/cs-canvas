@@ -1,0 +1,27 @@
+name: Self-test compliance scripts
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - '__fixtures__/**'
+      - '.github/workflows/subsystem-compliance.yml'
+      - '.github/workflows/core-hub-compliance.yml'
+      - 'VERSION'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - '__fixtures__/**'
+      - '.github/workflows/subsystem-compliance.yml'
+      - '.github/workflows/core-hub-compliance.yml'
+      - 'VERSION'
+
+jobs:
+  self-test:
+    name: Run fixture self-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run self-test
+        run: bash scripts/self-test.sh

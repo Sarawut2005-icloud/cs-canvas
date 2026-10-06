@@ -1,0 +1,69 @@
+{
+  "$comment": "Immutable Core Hub token contract. A subsystem MUST validate every field listed here.",
+  "standardsVersion": "1.2",
+  "algorithm": "RS256",
+  "issuer": "core-hub",
+  "audience": "csmju2030",
+  "kid": "core-hub-2026",
+  "jwksPath": "/api/v1/.well-known/jwks.json",
+  "jwksFormat": "RFC 7517 - the response body MUST be {\"keys\":[...]} with no wrapper",
+  "loginPath": "/api/v1/auth/login",
+  "ssoAuthorizePath": "/api/v1/auth/sso/authorize",
+  "ssoHandoffPath": "/api/v1/auth/sso/handoff",
+  "accessTokenLifetime": "15m",
+  "maxTokenLifetimeSeconds": 900,
+  "clockToleranceSeconds": 60,
+  "refreshTokenAudience": {
+    "$comment": "Planned with Core Hub's token-scope work: refresh tokens get their own audience, so the aud check of every subsystem rejects them. Subsystems never receive refresh tokens.",
+    "value": "core-hub-refresh"
+  },
+  "sso": {
+    "$comment": "Central SSO, standards 1.1 (auth-contract.md section 5). Every sign-in starts at the subsystem's login path; the browser is sent to Core Hub's WEB app, never to the API's ssoAuthorizePath, which needs a Bearer header a redirect cannot carry.",
+    "coreHubWebAuthorizePath": "/sso/authorize",
+    "coreHubWebLogoutPath": "/logout",
+    "subsystemLoginPath": "/auth/login",
+    "subsystemCallbackPath": "/auth/callback",
+    "subsystemLogoutPath": "/auth/logout",
+    "sessionCookieSuffix": "_access_token",
+    "stateCookieSuffix": "_sso_state",
+    "stateTtlMaxSec": 600
+  },
+  "claims": {
+    "sub": "Core Hub user id - the only identity a subsystem may trust. Opaque string up to 64 characters, NOT always a UUID (CSV-imported students are user-<studentCode>); store as text, never parse or validate as UUID; personal data",
+    "email": "Core Hub email - display only, never a key (an MJU SSO account may be <code>@sso.mju.local and can change)",
+    "role": "role of the user for this subsystem: the account's core role, or the role of an approved subsystem exception (student | alumni | staff | lecturer | guest | admin); read it from every request",
+    "sid": "Core Hub session id - informational only; there is no endpoint to check it",
+    "iss": "core-hub",
+    "aud": "csmju2030",
+    "iat": "issued at (epoch seconds) - required for the lifetime check",
+    "exp": "expires at (epoch seconds)",
+    "azp": "authorized party - the registered subsystem name the token was issued for. Planned: Core Hub adds it to every token it hands to a subsystem. When present it MUST equal the subsystem's own name"
+  },
+  "mustValidate": [
+    "signature",
+    "alg",
+    "kid",
+    "iss",
+    "aud",
+    "exp",
+    "sub",
+    "iat",
+    "lifetime (exp - iat <= maxTokenLifetimeSeconds + clockToleranceSeconds)",
+    "azp (when present)"
+  ],
+  "mustReject": [
+    "alg=none",
+    "HS256",
+    "any algorithm other than RS256",
+    "unknown kid after one JWKS refresh",
+    "a token without iat, or with exp - iat greater than maxTokenLifetimeSeconds + clockToleranceSeconds (for example a refresh token)",
+    "an azp different from the subsystem's own registered name"
+  ],
+  "mustIgnore": [
+    "claims not listed here - Core Hub may add claims without breaking the contract"
+  ],
+  "plannedChanges": {
+    "next": "After Core Hub's token-scope work is deployed: every token handed to a subsystem carries azp, refresh tokens use refreshTokenAudience, Core Hub refuses subsystem tokens outside the allowlisted data endpoints (reference-data.md), and approved subsystem exceptions set the role claim. A later standards release then makes azp mandatory. aud stays csmju2030 - this replaces the earlier plan to make aud the subsystem name.",
+    "v2.0": "The SSO handoff becomes authorization code + PKCE, so the access token no longer travels in the callback URL."
+  }
+}

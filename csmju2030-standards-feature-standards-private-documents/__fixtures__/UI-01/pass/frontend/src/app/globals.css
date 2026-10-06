@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* token file copied from the template: hex is allowed here only */
+@theme {
+  --color-primary-container: #2154d9;
+  --color-on-primary: #ffffff;
+}

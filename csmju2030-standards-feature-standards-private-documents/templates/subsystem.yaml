@@ -1,0 +1,39 @@
+# manifest ของระบบย่อย — CI และ conformance อ่านไฟล์นี้ไฟล์เดียว
+# schema: standards/schemas/subsystem.schema.json
+# ห้ามใส่บัญชีหรือรหัสผ่านในไฟล์นี้ (ถ้ามี test_accounts conformance จะตก) — บัญชีทดสอบอยู่ในไฟล์นอก repo
+# ที่ CONFORMANCE_ACCOUNTS_FILE ชี้ ดู standards/docs/conformance.md ข้อ 2.1
+
+name: csmju-<subsystem-name>          # a-z 0-9 คั่นด้วย - ไม่เกิน 64 ตัว · ตรงกับทะเบียนใน Core Hub, SUBSYSTEM_ID และ data.service ของ /api/health
+# เวอร์ชัน standards อยู่ใน .standards-version ไฟล์เดียว (ตั้งแต่ 1.5.1) — ไม่ต้องใส่ที่นี่
+conformance_level: L3                 # L1 · L2 · L3 (ระบบที่มี UI ต้องถึง L3)
+
+# frontend เป็นประตูเดียวของระบบ: proxy /api/* และ /auth/login /auth/callback /auth/logout ไป backend
+base_url: http://localhost:32xx       # แทน 32xx ด้วยพอร์ต frontend ของทีม · localhost ไม่ใช่ 127.0.0.1
+core_hub_url: https://csmju2030.jowave.com       # Core Hub จริง (API อยู่ใต้ /api/v1) · Core Hub ในเครื่อง: http://localhost:3000
+core_hub_web_url: https://csmju2030.jowave.com   # เว็บที่ /auth/login ส่งเบราว์เซอร์ไป (L3 ต้องมี) · ในเครื่อง: http://localhost:3100
+callback_path: /auth/callback         # base_url + callback_path ต้องตรงกับ Callback URL ที่ลงทะเบียนไว้
+
+# endpoint ที่เรียกได้โดยไม่มี token (SSO 1.1) — conformance ยิงทุกตัวนี้แบบไม่มี token
+public_endpoints:
+  - GET /api/health
+  - GET /auth/login
+  - GET /auth/callback
+  - POST /auth/logout
+
+# conformance ใช้ probes ตรวจสัญญา API — ประกาศไม่ครบ = ขึ้น SKIP = ยังไม่ผ่าน
+probes:
+  collection: /api/v1/<resources>
+  not_found: /api/v1/<resources>/99999999-9999-4999-8999-999999999999
+  invalid_id: /api/v1/<resources>/not-a-uuid
+  create:
+    path: /api/v1/<resources>
+    allowed_role: staff
+    denied_role: guest                # role ที่ต้องได้ 403 และมีบัญชีรหัสผ่าน (guest หรือ alumni) — student มีแต่ MJU SSO
+    invalid_body:
+      someRequiredField: ""
+    valid_body:
+      someRequiredField: value
+
+owners:
+  pl: "@csmju2030/pl-<subsystem-name>"
+  aie: "@csmju2030/aie-<subsystem-name>"

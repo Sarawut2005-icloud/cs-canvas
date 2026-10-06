@@ -1,0 +1,9 @@
+version: 1
+
+exceptions:
+  - check: UI-01
+    scope: "frontend/src/components/LegacyChart.tsx"
+    reason: "library chart ภายนอกต้องรับ hex string ไม่รับ CSS variable"
+    approved_by: ["@pm1", "@devops-lead"]
+    issue: "csmju2030-standards#142"
+    expires: "2099-12-31"

@@ -1,0 +1,184 @@
+openapi: 3.0.3
+info:
+  title: CSMJU2030 Subsystem — Required Surface
+  version: "1.1"
+  description: >
+    ส่วนของ API ที่ทุก subsystem ต้องมีเหมือนกัน (บังคับ).
+    endpoint ของ business domain เป็นอิสระของแต่ละทีม แต่ต้องใช้ envelope และ error code เดียวกัน.
+
+servers:
+  - url: http://localhost:3001
+    description: ตัวอย่าง subsystem ที่รันในเครื่อง
+
+paths:
+  /api/health:
+    get:
+      summary: Health check (public)
+      security: []
+      responses:
+        "200":
+          description: ระบบพร้อมใช้งาน
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success: { type: boolean, enum: [true] }
+                  data:
+                    type: object
+                    required: [status, service]
+                    properties:
+                      status: { type: string, enum: [ok] }
+                      service: { type: string, example: student-service }
+
+  /auth/login:
+    get:
+      summary: เริ่มทุกการเข้าสู่ระบบ (public, อยู่นอก prefix /api) — ไม่มีหน้าฟอร์ม
+      description: >
+        สร้าง state สุ่ม (≥ 32 ไบต์ base64url) เก็บพร้อม next ในคุกกี้ <ชื่อระบบ>_sso_state
+        แล้วส่งเบราว์เซอร์ไปเว็บของ Core Hub (auth-contract.md ข้อ 5.2)
+      security: []
+      parameters:
+        - in: query
+          name: next
+          required: false
+          schema: { type: string, maxLength: 512 }
+          description: path ภายในระบบย่อยที่จะกลับไปหลัง login · ค่าที่ไม่ผ่านกฎ ข้อ 5.2 ใช้หน้า default แทน
+      responses:
+        "302":
+          description: ไป {core_hub_web_url}/sso/authorize?subsystem=<ชื่อ>&state=<state> · ไม่ส่ง callback_url
+          headers:
+            Location: { schema: { type: string } }
+            Set-Cookie:
+              schema: { type: string }
+              description: "<ชื่อระบบ>_sso_state=<state>.<next base64url>; HttpOnly; SameSite=Lax; Path=/auth/callback; Max-Age<=600"
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+
+  /auth/callback:
+    get:
+      summary: Central SSO callback (public, อยู่นอก prefix /api)
+      description: >
+        ผลลัพธ์ตาม auth-contract.md ข้อ 5.1 · ทุกคำตอบมี Cache-Control no-store และ
+        Referrer-Policy no-referrer · ทุกกรณีที่ไม่สำเร็จต้องไม่มี Set-Cookie ของคุกกี้ session
+      security: []
+      parameters:
+        - { in: query, name: access_token, required: true, schema: { type: string } }
+        - { in: query, name: token_type, required: false, schema: { type: string, enum: [Bearer] } }
+        - { in: query, name: expires_in, required: false, schema: { type: string } }
+        - { in: query, name: state, required: false, schema: { type: string, maxLength: 512 } }
+      responses:
+        "302":
+          description: >
+            สำเร็จ — ตั้งคุกกี้ session แล้วไปหน้า next ที่เก็บไว้ ·
+            หรือไม่มี state (เริ่มจาก Core Hub) — ทิ้ง token ไม่ตั้งคุกกี้ใด ๆ แล้วไป /auth/login
+          headers:
+            Location: { schema: { type: string } }
+            Set-Cookie:
+              schema: { type: string }
+              description: "<ชื่อระบบ>_access_token=<token>; HttpOnly; SameSite=Lax; Path=/; Max-Age=exp-ตอนนี้ (เฉพาะกรณีสำเร็จ)"
+        "400":
+          description: ไม่มี access_token
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "401":
+          description: state ไม่ตรงหรือไม่มีคุกกี้ state · หรือ token ใช้ไม่ได้ — ไม่ redirect ซ้ำ และต้องไม่มีคุกกี้ session
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "403":
+          description: core role ที่ subsystem นี้ไม่รับ — ต้องไม่มีคุกกี้ session
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /auth/logout:
+    post:
+      summary: ออกจากระบบทั้งระบบ (public, อยู่นอก prefix /api)
+      description: ลบคุกกี้ของระบบย่อยทั้งสองด้วย Path เดิม แล้วส่งไปหน้ายืนยันออกจากระบบของ Core Hub
+      security: []
+      responses:
+        "303":
+          description: ไป {core_hub_web_url}/logout
+          headers:
+            Location: { schema: { type: string } }
+            Set-Cookie:
+              schema: { type: string }
+              description: "<ชื่อระบบ>_access_token=; Path=/; Max-Age=0 และ <ชื่อระบบ>_sso_state=; Path=/auth/callback; Max-Age=0"
+
+  /api/v1/me:
+    get:
+      summary: ตัวตนของผู้ใช้ปัจจุบัน (จาก Core Hub token ที่ตรวจแล้ว)
+      responses:
+        "200":
+          content: { application/json: { schema: { $ref: "#/components/schemas/MeEnvelope" } } }
+        "401":
+          description: ไม่มี token / token ใช้ไม่ได้ / หมดอายุ — เป็น JSON เสมอ ห้าม redirect ไป login
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "403":
+          description: core role ที่ subsystem นี้ไม่รับ
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+components:
+  securitySchemes:
+    coreHubBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ssoCookie:
+      type: apiKey
+      in: cookie
+      # ชื่อจริงคือ <ชื่อระบบ>_access_token (เปลี่ยน - เป็น _) — ตัวอย่างของ student-service
+      name: student_service_access_token
+
+  schemas:
+    MeEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: object
+          required: [id, email, coreRole, subsystemRole]
+          properties:
+            id: { type: string, description: "ค่า sub จาก Core Hub token" }
+            email: { type: string, format: email }
+            coreRole: { type: string, enum: [student, alumni, staff, lecturer, guest, admin] }
+            subsystemRole: { type: string, description: "ผลของ role mapping ของ subsystem" }
+            session:
+              type: object
+              description: ไม่บังคับ · ให้ frontend รู้เวลาต่ออายุล่วงหน้าผ่าน /auth/login
+              properties:
+                expiresAt: { type: string, format: date-time, description: "คำนวณจาก exp ของ token" }
+
+    Collection:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { type: array, items: { type: object } }
+        meta:
+          type: object
+          required: [total, page, limit, totalPages]
+          properties:
+            total: { type: integer }
+            page: { type: integer }
+            limit: { type: integer }
+            totalPages: { type: integer }
+
+    Error:
+      type: object
+      required: [success, error]
+      properties:
+        success: { type: boolean, enum: [false] }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [BAD_REQUEST, VALIDATION_ERROR, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CONFLICT, TOO_MANY_REQUESTS, INTERNAL_ERROR, SERVICE_UNAVAILABLE]
+            message: { type: string }
+            details:
+              type: array
+              items: { type: string }
+              description: ใช้กับ VALIDATION_ERROR
+
+security:
+  - coreHubBearer: []
+  - ssoCookie: []

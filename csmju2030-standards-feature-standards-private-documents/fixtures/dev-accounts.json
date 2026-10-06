@@ -1,0 +1,11 @@
+{
+  "$comment": "บัญชี dev ที่ seed ไว้ใน Core Hub - ใช้เฉพาะเครื่องพัฒนา/ทดสอบเท่านั้น",
+  "coreHubUrl": "http://localhost:3000",
+  "accounts": [
+    { "role": "admin",   "sub": "user-001", "email": "admin@core.local",   "password": "password1" },
+    { "role": "student", "sub": "user-002", "email": "student@core.local", "password": "password2" },
+    { "role": "staff",   "sub": "user-003", "email": "staff@core.local",   "password": "password3" },
+    { "role": "alumni",  "sub": "user-004", "email": "alumni@core.local",  "password": "password4" }
+  ],
+  "loginExample": "curl -s -X POST http://localhost:3000/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"staff@core.local\",\"password\":\"password3\"}' | jq -r '.data.access_token'"
+}

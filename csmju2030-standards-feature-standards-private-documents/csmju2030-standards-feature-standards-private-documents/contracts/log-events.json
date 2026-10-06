@@ -1,0 +1,101 @@
+{
+  "$comment": "ชื่อ event ปิดสำหรับ structured log ด้านการยืนยันตัวตน/สิทธิ์",
+  "standardsVersion": "1.1",
+  "required": [
+    {
+      "event": "subsystem.started",
+      "fields": [
+        "subsystem",
+        "port",
+        "coreHubUrl",
+        "jwksUrl",
+        "issuer",
+        "audience"
+      ]
+    },
+    {
+      "event": "jwt.verification.success",
+      "fields": [
+        "sub",
+        "coreRole",
+        "subsystemRole"
+      ]
+    },
+    {
+      "event": "jwt.verification.failure",
+      "fields": [
+        "reason",
+        "kid",
+        "path"
+      ]
+    },
+    {
+      "event": "jwks.refresh",
+      "fields": [
+        "reason",
+        "keyCount",
+        "kids"
+      ]
+    },
+    {
+      "event": "jwks.refresh.failure",
+      "fields": [
+        "reason",
+        "cachedKeyCount"
+      ]
+    },
+    {
+      "event": "jwks.unknown_kid",
+      "fields": [
+        "kid",
+        "knownKids"
+      ]
+    },
+    {
+      "event": "authorization.role_mapping_failed",
+      "fields": [
+        "sub",
+        "coreRole"
+      ]
+    },
+    {
+      "event": "authorization.denied",
+      "fields": [
+        "sub",
+        "subsystemRole",
+        "required",
+        "reason",
+        "path"
+      ]
+    }
+  ],
+  "failureReasons": [
+    "missing_token",
+    "malformed_token",
+    "unsupported_algorithm",
+    "missing_kid",
+    "unknown_kid",
+    "jwks_unavailable",
+    "invalid_signature",
+    "expired",
+    "invalid_issuer",
+    "invalid_audience",
+    "invalid_claims",
+    "sso_restart_without_state",
+    "sso_state_missing",
+    "sso_state_mismatch",
+    "token_lifetime_exceeded",
+    "invalid_azp"
+  ],
+  "mustNeverLog": [
+    "access token",
+    "refresh token",
+    "Authorization header",
+    "password",
+    "private key",
+    "the full /auth/callback URL (its query carries the access token) - log the path only",
+    "the whole Cookie header (on localhost it also carries Core Hub's refresh token)",
+    "any request URL with its query string - loggers and error filters log the path only (queries can carry tokens or search terms with names)",
+    "names, emails or other personal data - identify a user by sub only"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "name": "csmju-example",
+  "private": true,
+  "scripts": { "test": "jest" }
+}

@@ -1,0 +1,64 @@
+# Ruleset sweep — ตั้ง ruleset ให้ repo ระบบย่อยที่ยังไม่มี
+#
+# plan Free ไม่มี org ruleset (API ตอบ 403 "Upgrade to GitHub Team") ต้องตั้ง
+# ราย repo new-subsystem.sh ตั้งให้ตอนสร้างอยู่แล้ว workflow นี้คอยเก็บตัวที่หลุด
+# เช่น repo ที่สร้างในหน้าเว็บ หรือคนรันสคริปต์ไม่มีสิทธิ์ admin
+# ตรรกะทั้งหมดอยู่ใน org-settings/apply-rulesets.sh (mode sweep)
+#
+# GITHUB_TOKEN แตะ repo อื่นไม่ได้ ต้องมี credential ที่มีสิทธิ์
+# Administration: write ทุก repo อย่างใดอย่างหนึ่ง
+#   GitHub App (แนะนำ): vars.RULESET_APP_ID + secrets.RULESET_APP_PRIVATE_KEY
+#   PAT:                secrets.RULESET_ADMIN_TOKEN
+# วิธีตั้งดู org-settings/org-settings-checklist.md หัวข้อ "Ruleset sweep"
+name: Ruleset Sweep
+
+on:
+  schedule:
+    - cron: '17 * * * *'      # ทุกชั่วโมง นาทีที่ 17 เลี่ยงต้นชั่วโมงที่คิว GitHub แน่น
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'แค่รายงาน ไม่ตั้งจริง'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ruleset-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: Ruleset Sweep
+    runs-on: ubuntu-latest
+    # fork ของ standards repo ไม่มี credential ไม่ต้องรัน
+    if: github.repository == 'CSMJU2030/csmju2030-standards'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Mint GitHub App token
+        id: app
+        if: vars.RULESET_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.RULESET_APP_ID }}
+          private-key: ${{ secrets.RULESET_APP_PRIVATE_KEY }}
+          owner: CSMJU2030
+
+      - name: Sweep
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.RULESET_ADMIN_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::ยังไม่ได้ตั้ง credential — ต้องมี vars.RULESET_APP_ID + secrets.RULESET_APP_PRIVATE_KEY หรือ secrets.RULESET_ADMIN_TOKEN (ดู org-settings/org-settings-checklist.md)"
+            exit 1
+          fi
+          args=(sweep)
+          [ "$DRY_RUN" = 1 ] && args+=(--dry-run)
+          bash org-settings/apply-rulesets.sh "${args[@]}"

@@ -1,0 +1,31 @@
+# manifest ของ reference implementation — ใช้ทดสอบตัว conformance runner เอง
+name: student-service
+standards_version: "1.1.0"
+conformance_level: L3
+
+base_url: http://localhost:3001
+core_hub_url: http://localhost:3000
+core_hub_web_url: http://localhost:3100   # เว็บของ Core Hub ที่ /auth/login ส่งเบราว์เซอร์ไป (L3-16)
+callback_path: /auth/callback
+
+public_endpoints:
+  - GET /api/health
+  - GET /auth/login
+  - GET /auth/callback
+  - POST /auth/logout
+
+probes:
+  collection: /api/v1/courses
+  not_found: /api/v1/courses/99999999-9999-4999-8999-999999999999
+  invalid_id: /api/v1/courses/not-a-uuid
+  create:
+    path: /api/v1/courses
+    allowed_role: staff
+    denied_role: student
+    invalid_body:
+      course_code: nope
+      credits: 999
+    valid_body:
+      courseCode: CS777
+      name: Conformance Probe
+      credits: 3
